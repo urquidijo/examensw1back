@@ -18,6 +18,10 @@ public class User {
     private String name;
     private String email;
     private String password;
-    private Role role;
-    private boolean active;
+
+    @Builder.Default
+    private Role role = Role.USER;
+
+    @Builder.Default
+    private boolean active = true;
 }

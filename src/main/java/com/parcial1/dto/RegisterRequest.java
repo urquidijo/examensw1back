@@ -1,9 +1,8 @@
 package com.parcial1.dto;
 
-import com.parcial1.model.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,16 +10,15 @@ import lombok.Setter;
 @Setter
 public class RegisterRequest {
 
-    @NotBlank
+    @NotBlank(message = "El nombre es obligatorio")
     private String name;
 
-    @Email
-    @NotBlank
+    @Email(message = "El email no es válido")
+    @NotBlank(message = "El email es obligatorio")
     private String email;
 
-    @NotBlank
+    @NotBlank(message = "La contraseña es obligatoria")
+    @Size(min = 6, message = "La contraseña debe tener al menos 6 caracteres")
     private String password;
 
-    @NotNull
-    private Role role;
 }
