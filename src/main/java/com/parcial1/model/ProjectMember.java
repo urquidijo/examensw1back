@@ -20,5 +20,6 @@ public class ProjectMember {
     private String projectId;
     private String userId;
     private ProjectRole role;
+    private String assignedNodeId;
     private LocalDateTime joinedAt;
 }

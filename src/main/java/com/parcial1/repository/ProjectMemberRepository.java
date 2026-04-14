@@ -14,6 +14,10 @@ public interface ProjectMemberRepository extends MongoRepository<ProjectMember, 
 
     Optional<ProjectMember> findByProjectIdAndUserId(String projectId, String userId);
 
+    List<ProjectMember> findByProjectIdAndAssignedNodeId(String projectId, String assignedNodeId);
+
+    boolean existsByProjectIdAndUserId(String projectId, String userId);
+
     void deleteByProjectId(String projectId);
 
     long countByProjectId(String projectId);
