@@ -1,7 +1,6 @@
 package com.parcial1.controller;
 
 import com.parcial1.dto.CreateProjectRequest;
-import com.parcial1.dto.InviteUserRequest;
 import com.parcial1.dto.MessageResponse;
 import com.parcial1.dto.ProjectSummaryResponse;
 import com.parcial1.model.Project;
@@ -45,13 +44,13 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.getProjectById(projectId));
     }
 
-    @PostMapping("/{projectId}/invite")
-    public ResponseEntity<MessageResponse> inviteUser(
-            @PathVariable String projectId,
-            @Valid @RequestBody InviteUserRequest request) {
-        projectService.inviteUser(projectId, request);
-        return ResponseEntity.ok(new MessageResponse("Usuario invitado correctamente"));
-    }
+    // @PostMapping("/{projectId}/invite")
+    // public ResponseEntity<MessageResponse> inviteUser(
+    //         @PathVariable String projectId,
+    //         @Valid @RequestBody InviteUserRequest request) {
+    //     projectService.inviteUser(projectId, request);
+    //     return ResponseEntity.ok(new MessageResponse("Usuario invitado correctamente"));
+    // }
 
     @DeleteMapping("/{projectId}")
     public ResponseEntity<MessageResponse> deleteProject(@PathVariable String projectId) {

@@ -9,7 +9,6 @@ import java.util.Map;
 @Getter
 @Setter
 public class WorkflowDiagramRequest {
-    private String projectId;
     private List<Map<String, Object>> nodes;
     private List<Map<String, Object>> edges;
 }

@@ -27,6 +27,11 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
+
+                .requestMatchers(HttpMethod.GET, "/api/node-invites/*").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/node-invites/*/accept").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/node-invites/projects/*/nodes/*/generate").authenticated()
+
                 .anyRequest().authenticated()
             )
             .sessionManagement(session ->
