@@ -4,6 +4,7 @@ import com.parcial1.dto.CreateWorkflowRequest;
 import com.parcial1.dto.MessageResponse;
 import com.parcial1.dto.WorkflowDiagramRequest;
 import com.parcial1.dto.WorkflowDiagramResponse;
+import com.parcial1.dto.WorkflowStatusRequest;
 import com.parcial1.dto.WorkflowSummaryResponse;
 import com.parcial1.service.WorkflowService;
 import jakarta.validation.Valid;
@@ -28,16 +29,14 @@ public class WorkflowController {
     @PostMapping
     public ResponseEntity<WorkflowSummaryResponse> createWorkflow(
             @PathVariable String projectId,
-            @Valid @RequestBody CreateWorkflowRequest request
-    ) {
+            @Valid @RequestBody CreateWorkflowRequest request) {
         return ResponseEntity.ok(workflowService.createWorkflow(projectId, request));
     }
 
     @GetMapping("/{workflowId}")
     public ResponseEntity<WorkflowDiagramResponse> getWorkflow(
             @PathVariable String projectId,
-            @PathVariable String workflowId
-    ) {
+            @PathVariable String workflowId) {
         return ResponseEntity.ok(workflowService.getWorkflow(projectId, workflowId));
     }
 
@@ -45,16 +44,22 @@ public class WorkflowController {
     public ResponseEntity<MessageResponse> saveWorkflow(
             @PathVariable String projectId,
             @PathVariable String workflowId,
-            @RequestBody WorkflowDiagramRequest request
-    ) {
+            @RequestBody WorkflowDiagramRequest request) {
         return ResponseEntity.ok(workflowService.saveWorkflow(projectId, workflowId, request));
+    }
+
+    @PatchMapping("/{workflowId}/status")
+    public ResponseEntity<WorkflowSummaryResponse> updateWorkflowStatus(
+            @PathVariable String projectId,
+            @PathVariable String workflowId,
+            @Valid @RequestBody WorkflowStatusRequest request) {
+        return ResponseEntity.ok(workflowService.updateWorkflowStatus(projectId, workflowId, request));
     }
 
     @DeleteMapping("/{workflowId}")
     public ResponseEntity<MessageResponse> deleteWorkflow(
             @PathVariable String projectId,
-            @PathVariable String workflowId
-    ) {
+            @PathVariable String workflowId) {
         return ResponseEntity.ok(workflowService.deleteWorkflow(projectId, workflowId));
     }
 }

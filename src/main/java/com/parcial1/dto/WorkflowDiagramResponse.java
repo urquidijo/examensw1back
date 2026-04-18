@@ -15,6 +15,7 @@ public class WorkflowDiagramResponse {
     private String projectId;
     private String name;
     private String description;
+    private String status;
     private List<Map<String, Object>> nodes;
     private List<Map<String, Object>> edges;
 }

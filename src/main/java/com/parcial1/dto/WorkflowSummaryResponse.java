@@ -16,6 +16,7 @@ public class WorkflowSummaryResponse {
     private String description;
     private int nodesCount;
     private int edgesCount;
+    private String status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

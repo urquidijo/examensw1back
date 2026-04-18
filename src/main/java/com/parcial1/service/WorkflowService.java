@@ -4,12 +4,15 @@ import com.parcial1.dto.CreateWorkflowRequest;
 import com.parcial1.dto.MessageResponse;
 import com.parcial1.dto.WorkflowDiagramRequest;
 import com.parcial1.dto.WorkflowDiagramResponse;
+import com.parcial1.dto.WorkflowStatusRequest;
 import com.parcial1.dto.WorkflowSummaryResponse;
 import com.parcial1.model.ProjectMember;
 import com.parcial1.model.ProjectRole;
 import com.parcial1.model.User;
 import com.parcial1.model.Workflow;
+import com.parcial1.model.WorkflowStatus;
 import com.parcial1.repository.ProjectMemberRepository;
+import com.parcial1.repository.TicketRepository;
 import com.parcial1.repository.UserRepository;
 import com.parcial1.repository.WorkflowRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,7 @@ public class WorkflowService {
     private final WorkflowRepository workflowRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final UserRepository userRepository;
+    private final TicketRepository ticketRepository;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -66,6 +70,7 @@ public class WorkflowService {
                         .description(workflow.getDescription())
                         .nodesCount(workflow.getNodes() != null ? workflow.getNodes().size() : 0)
                         .edgesCount(workflow.getEdges() != null ? workflow.getEdges().size() : 0)
+                        .status(workflow.getStatus() != null ? workflow.getStatus().name() : "DRAFT")
                         .createdAt(workflow.getCreatedAt())
                         .updatedAt(workflow.getUpdatedAt())
                         .build())
@@ -84,6 +89,7 @@ public class WorkflowService {
                 .createdBy(currentUser.getId())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
+                .status(WorkflowStatus.DRAFT)
                 .nodes(Collections.emptyList())
                 .edges(Collections.emptyList())
                 .build();
@@ -114,6 +120,7 @@ public class WorkflowService {
                 .projectId(workflow.getProjectId())
                 .name(workflow.getName())
                 .description(workflow.getDescription())
+                .status(workflow.getStatus() != null ? workflow.getStatus().name() : "DRAFT")
                 .nodes(workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList())
                 .edges(workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList())
                 .build();
@@ -130,10 +137,47 @@ public class WorkflowService {
         workflow.setNodes(request.getNodes() != null ? request.getNodes() : Collections.emptyList());
         workflow.setEdges(request.getEdges() != null ? request.getEdges() : Collections.emptyList());
         workflow.setUpdatedAt(LocalDateTime.now());
+        if (workflow.getStatus() == WorkflowStatus.PUBLISHED) {
+            throw new RuntimeException("El workflow está en producción y no puede editarse");
+        }
 
         workflowRepository.save(workflow);
 
         return new MessageResponse("Workflow guardado correctamente");
+    }
+
+    public WorkflowSummaryResponse updateWorkflowStatus(String projectId, String workflowId,
+            WorkflowStatusRequest request) {
+        User currentUser = getCurrentUser();
+        ProjectMember membership = getMembership(projectId, currentUser.getId());
+        validateAdmin(membership);
+
+        Workflow workflow = workflowRepository.findByIdAndProjectId(workflowId, projectId)
+                .orElseThrow(() -> new RuntimeException("Workflow no encontrado"));
+
+        if (request.getStatus() == WorkflowStatus.DRAFT) {
+            long ticketsCount = ticketRepository.countByWorkflowId(workflowId);
+            if (ticketsCount > 0) {
+                throw new RuntimeException("No puedes volver a desarrollo porque este workflow ya tiene tickets");
+            }
+        }
+
+        workflow.setStatus(request.getStatus());
+        workflow.setUpdatedAt(LocalDateTime.now());
+
+        Workflow saved = workflowRepository.save(workflow);
+
+        return WorkflowSummaryResponse.builder()
+                .id(saved.getId())
+                .projectId(saved.getProjectId())
+                .name(saved.getName())
+                .description(saved.getDescription())
+                .nodesCount(saved.getNodes() != null ? saved.getNodes().size() : 0)
+                .edgesCount(saved.getEdges() != null ? saved.getEdges().size() : 0)
+                .status(saved.getStatus() != null ? saved.getStatus().name() : "DRAFT")
+                .createdAt(saved.getCreatedAt())
+                .updatedAt(saved.getUpdatedAt())
+                .build();
     }
 
     public MessageResponse deleteWorkflow(String projectId, String workflowId) {
