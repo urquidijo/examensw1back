@@ -78,6 +78,33 @@ public class TaskService {
                 .build();
     }
 
+    public TaskFileDownloadResponse downloadCompletedHistoryFile(String projectId, String historyId, String key) {
+        User currentUser = getCurrentUser();
+        getMembership(projectId, currentUser.getId());
+
+        TicketStepHistory history = ticketStepHistoryRepository.findByIdAndProjectId(historyId, projectId)
+                .orElseThrow(() -> new RuntimeException("Histórico de tarea no encontrado"));
+
+        StoredFileInfo fileInfo = history.getUploadedFiles() == null
+                ? null
+                : history.getUploadedFiles().stream()
+                        .filter(file -> key.equals(file.getKey()))
+                        .findFirst()
+                        .orElse(null);
+
+        if (fileInfo == null) {
+            throw new RuntimeException("Archivo del histórico no encontrado");
+        }
+
+        byte[] content = s3StorageService.download(fileInfo.getKey());
+
+        return TaskFileDownloadResponse.builder()
+                .content(content)
+                .originalName(fileInfo.getOriginalName())
+                .contentType(fileInfo.getContentType())
+                .build();
+    }
+
     private TicketStepHistoryResponse mapHistory(TicketStepHistory item) {
         return TicketStepHistoryResponse.builder()
                 .id(item.getId())

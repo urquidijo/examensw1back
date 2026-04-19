@@ -20,24 +20,21 @@ public class TaskController {
 
     @GetMapping("/task-board/departments")
     public ResponseEntity<List<DepartmentTaskBoardResponse>> getTaskBoardDepartments(
-            @PathVariable String projectId
-    ) {
+            @PathVariable String projectId) {
         return ResponseEntity.ok(taskService.getTaskBoardDepartments(projectId));
     }
 
     @GetMapping("/departments/{departmentId}/my-tasks")
     public ResponseEntity<List<WorkflowTaskResponse>> getMyDepartmentTasks(
             @PathVariable String projectId,
-            @PathVariable String departmentId
-    ) {
+            @PathVariable String departmentId) {
         return ResponseEntity.ok(taskService.getMyDepartmentTasks(projectId, departmentId));
     }
 
     @GetMapping("/tasks/{taskId}")
     public ResponseEntity<WorkflowTaskResponse> getTaskDetail(
             @PathVariable String projectId,
-            @PathVariable String taskId
-    ) {
+            @PathVariable String taskId) {
         return ResponseEntity.ok(taskService.getTaskDetail(projectId, taskId));
     }
 
@@ -46,16 +43,28 @@ public class TaskController {
             @PathVariable String projectId,
             @PathVariable String taskId,
             @RequestPart("payload") CompleteTaskRequest request,
-            @RequestPart(value = "files", required = false) List<MultipartFile> files
-    ) throws IOException {
+            @RequestPart(value = "files", required = false) List<MultipartFile> files) throws IOException {
         return ResponseEntity.ok(taskService.completeTask(projectId, taskId, request, files));
     }
 
     @GetMapping("/departments/{departmentId}/completed-history")
     public ResponseEntity<List<TicketStepHistoryResponse>> getDepartmentCompletedHistory(
             @PathVariable String projectId,
-            @PathVariable String departmentId
-    ) {
+            @PathVariable String departmentId) {
         return ResponseEntity.ok(taskService.getDepartmentCompletedHistory(projectId, departmentId));
+    }
+
+    @GetMapping("/completed-history/{historyId}/files/download")
+    public ResponseEntity<byte[]> downloadCompletedHistoryFile(
+            @PathVariable String projectId,
+            @PathVariable String historyId,
+            @RequestParam String key) {
+        TaskFileDownloadResponse file = taskService.downloadCompletedHistoryFile(projectId, historyId, key);
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + file.getOriginalName() + "\"")
+                .header("Content-Type",
+                        file.getContentType() != null ? file.getContentType() : "application/octet-stream")
+                .body(file.getContent());
     }
 }
