@@ -37,9 +37,12 @@ public class WorkflowTask {
     private String tramiteTemplateId;
     private String tramiteTemplateName;
 
+    private List<StoredFileInfo> uploadedFiles;
+
     private String decisionMode;
     private String decisionQuestion;
     private List<Map<String, String>> decisionOptions;
+    
 
     private TaskStatus status;
 

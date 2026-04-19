@@ -1,5 +1,6 @@
 package com.parcial1.dto;
 
+import com.parcial1.model.StoredFileInfo;
 import com.parcial1.model.TaskStatus;
 import lombok.Builder;
 import lombok.Getter;
@@ -35,6 +36,7 @@ public class WorkflowTaskResponse {
     private String decisionMode;
     private String decisionQuestion;
     private List<Map<String, String>> decisionOptions;
+    private List<StoredFileInfo> uploadedFiles;
 
     private TaskStatus status;
 

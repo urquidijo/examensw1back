@@ -5,7 +5,10 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
+
+import com.parcial1.model.StoredFileInfo;
 
 @Getter
 @Setter
@@ -29,6 +32,7 @@ public class TicketStepHistoryResponse {
     private boolean requiresTramite;
     private String tramiteTemplateId;
     private String tramiteTemplateName;
+    private List<StoredFileInfo> uploadedFiles;
 
     private String decisionResult;
     private Map<String, Object> submittedTramiteData;

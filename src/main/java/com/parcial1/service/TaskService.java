@@ -3,10 +3,13 @@ package com.parcial1.service;
 import com.parcial1.dto.*;
 import com.parcial1.model.*;
 import com.parcial1.repository.*;
+
+import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -25,6 +28,7 @@ public class TaskService {
     private final TramiteTemplateRepository tramiteTemplateRepository;
     private final TicketStepHistoryRepository ticketStepHistoryRepository;
     private final ParallelJoinStateRepository parallelJoinStateRepository;
+    private final S3StorageService s3StorageService;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -59,6 +63,7 @@ public class TaskService {
                 .tramiteTemplateId(task.getTramiteTemplateId())
                 .tramiteTemplateName(task.getTramiteTemplateName())
                 .decisionMode(task.getDecisionMode())
+                .uploadedFiles(task.getUploadedFiles())
                 .decisionQuestion(task.getDecisionQuestion())
                 .decisionOptions(task.getDecisionOptions())
                 .status(task.getStatus())
@@ -83,6 +88,7 @@ public class TaskService {
                 .assignedUserId(item.getAssignedUserId())
                 .assignedUserName(item.getAssignedUserName())
                 .requiresTramite(item.isRequiresTramite())
+                .uploadedFiles(item.getUploadedFiles())
                 .tramiteTemplateId(item.getTramiteTemplateId())
                 .tramiteTemplateName(item.getTramiteTemplateName())
                 .decisionResult(item.getDecisionResult())
@@ -204,7 +210,11 @@ public class TaskService {
                 .toList();
     }
 
-    public WorkflowTaskResponse completeTask(String projectId, String taskId, CompleteTaskRequest request) {
+    public WorkflowTaskResponse completeTask(
+            String projectId,
+            String taskId,
+            CompleteTaskRequest request,
+            List<MultipartFile> files) {
         User currentUser = getCurrentUser();
         getMembership(projectId, currentUser.getId());
 
@@ -238,10 +248,33 @@ public class TaskService {
 
         LocalDateTime now = LocalDateTime.now();
 
+        List<StoredFileInfo> uploadedFiles = new ArrayList<>();
+
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+
+                try {
+                    StoredFileInfo storedFile = s3StorageService.uploadTaskTramiteFile(
+                            task.getTicketId(),
+                            task.getId(),
+                            file,
+                            currentUser.getId());
+
+                    uploadedFiles.add(storedFile);
+                } catch (IOException e) {
+                    throw new RuntimeException("No se pudo subir el archivo a AWS S3");
+                }
+            }
+        }
+
         task.setStatus(TaskStatus.DONE);
         task.setStartedAt(task.getStartedAt() != null ? task.getStartedAt() : task.getCreatedAt());
         task.setCompletedAt(now);
         task.setSubmittedTramiteData(request != null ? request.getTramiteData() : null);
+        task.setUploadedFiles(uploadedFiles);
         workflowTaskRepository.save(task);
 
         TicketStepHistory history = TicketStepHistory.builder()
@@ -260,6 +293,7 @@ public class TaskService {
                 .tramiteTemplateName(task.getTramiteTemplateName())
                 .decisionResult(request != null ? request.getDecisionResult() : null)
                 .submittedTramiteData(task.getSubmittedTramiteData())
+                .uploadedFiles(uploadedFiles)
                 .startedAt(task.getStartedAt())
                 .completedAt(now)
                 .build();
@@ -300,7 +334,6 @@ public class TaskService {
         ticket.setUpdatedAt(now);
         ticketRepository.save(ticket);
     }
-    
 
     private String getNodeType(Map<String, Object> node) {
         if (node == null)
@@ -438,7 +471,6 @@ public class TaskService {
         ticket.setUpdatedAt(now);
         ticketRepository.save(ticket);
     }
-    
 
     private void advanceIntoNode(
             Ticket ticket,
@@ -598,34 +630,34 @@ public class TaskService {
     }
 
     public void startWorkflowForTicket(Ticket ticket, Workflow workflow) {
-    LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
 
-    List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
-    List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
+        List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
+        List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
 
-    Map<String, Object> startNode = null;
+        Map<String, Object> startNode = null;
 
-    for (Map<String, Object> node : nodes) {
-        String nodeType = getNodeType(node);
-        if ("start".equalsIgnoreCase(nodeType)) {
-            startNode = node;
-            break;
+        for (Map<String, Object> node : nodes) {
+            String nodeType = getNodeType(node);
+            if ("start".equalsIgnoreCase(nodeType)) {
+                startNode = node;
+                break;
+            }
         }
+
+        if (startNode == null) {
+            throw new RuntimeException("El workflow no tiene nodo start");
+        }
+
+        String startNodeId = String.valueOf(startNode.get("id"));
+        Map<String, Object> firstNode = findDirectTargetNode(startNodeId, nodes, edges);
+
+        if (firstNode == null) {
+            throw new RuntimeException("El nodo start no tiene un siguiente nodo");
+        }
+
+        advanceIntoNode(ticket, workflow, firstNode, null, null, null, null, now);
     }
-
-    if (startNode == null) {
-        throw new RuntimeException("El workflow no tiene nodo start");
-    }
-
-    String startNodeId = String.valueOf(startNode.get("id"));
-    Map<String, Object> firstNode = findDirectTargetNode(startNodeId, nodes, edges);
-
-    if (firstNode == null) {
-        throw new RuntimeException("El nodo start no tiene un siguiente nodo");
-    }
-
-    advanceIntoNode(ticket, workflow, firstNode, null, null, null, null, now);
-}
 
     private String findCommonJoinNodeId(
             List<String> branchTargets,
@@ -760,7 +792,6 @@ public class TaskService {
 
         return null;
     }
-
 
     private String extractCellId(Object endpoint) {
         if (endpoint instanceof String str) {

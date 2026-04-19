@@ -5,6 +5,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Document(collection = "ticket_step_history")
@@ -35,6 +36,8 @@ public class TicketStepHistory {
     private boolean requiresTramite;
     private String tramiteTemplateId;
     private String tramiteTemplateName;
+
+    private List<StoredFileInfo> uploadedFiles;
 
     private String decisionResult;
     private Map<String, Object> submittedTramiteData;
