@@ -8,6 +8,7 @@ import com.parcial1.dto.WorkflowStatusRequest;
 import com.parcial1.dto.WorkflowSummaryResponse;
 import com.parcial1.model.ProjectMember;
 import com.parcial1.model.ProjectRole;
+import com.parcial1.model.TicketStatus;
 import com.parcial1.model.User;
 import com.parcial1.model.Workflow;
 import com.parcial1.model.WorkflowStatus;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+// import com.parcial1.model.TicketStatus;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -156,9 +158,12 @@ public class WorkflowService {
                 .orElseThrow(() -> new RuntimeException("Workflow no encontrado"));
 
         if (request.getStatus() == WorkflowStatus.DRAFT) {
-            long ticketsCount = ticketRepository.countByWorkflowId(workflowId);
-            if (ticketsCount > 0) {
-                throw new RuntimeException("No puedes volver a desarrollo porque este workflow ya tiene tickets");
+            long activeTicketsCount = ticketRepository.countByWorkflowIdAndStatusIn(
+                    workflowId,
+                    List.of(TicketStatus.OPEN, TicketStatus.IN_PROGRESS));
+
+            if (activeTicketsCount > 0) {
+                throw new RuntimeException("No puedes volver a desarrollo porque este workflow tiene tickets activos");
             }
         }
 

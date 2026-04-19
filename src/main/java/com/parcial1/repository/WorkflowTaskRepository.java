@@ -5,6 +5,7 @@ import com.parcial1.model.WorkflowTask;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface WorkflowTaskRepository extends MongoRepository<WorkflowTask, String> {
 
@@ -16,4 +17,13 @@ public interface WorkflowTaskRepository extends MongoRepository<WorkflowTask, St
     );
 
     List<WorkflowTask> findByDepartmentIdOrderByCreatedAtDesc(String departmentId);
+
+    List<WorkflowTask> findByProjectIdAndAssignedUserIdAndDepartmentIdAndStatusInOrderByCreatedAtDesc(
+            String projectId,
+            String assignedUserId,
+            String departmentId,
+            List<TaskStatus> statuses
+    );
+
+    Optional<WorkflowTask> findByIdAndProjectId(String id, String projectId);
 }

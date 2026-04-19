@@ -2,7 +2,6 @@ package com.parcial1.service;
 
 import com.parcial1.dto.CreateTicketRequest;
 import com.parcial1.dto.TicketResponse;
-import com.parcial1.dto.WorkflowTaskResponse;
 import com.parcial1.model.*;
 import com.parcial1.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +10,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -64,29 +65,6 @@ public class TicketService {
                 .build();
     }
 
-    private WorkflowTaskResponse mapTask(WorkflowTask task) {
-        return WorkflowTaskResponse.builder()
-                .id(task.getId())
-                .projectId(task.getProjectId())
-                .ticketId(task.getTicketId())
-                .workflowId(task.getWorkflowId())
-                .nodeId(task.getNodeId())
-                .nodeLabel(task.getNodeLabel())
-                .departmentId(task.getDepartmentId())
-                .departmentName(task.getDepartmentName())
-                .assignedUserId(task.getAssignedUserId())
-                .assignedUserName(task.getAssignedUserName())
-                .requiresTramite(task.isRequiresTramite())
-                .tramiteTemplateId(task.getTramiteTemplateId())
-                .tramiteTemplateName(task.getTramiteTemplateName())
-                .status(task.getStatus())
-                .submittedTramiteData(task.getSubmittedTramiteData())
-                .createdAt(task.getCreatedAt())
-                .startedAt(task.getStartedAt())
-                .completedAt(task.getCompletedAt())
-                .build();
-    }
-
     public List<TicketResponse> getTickets(String projectId) {
         User currentUser = getCurrentUser();
         getMembership(projectId, currentUser.getId());
@@ -94,16 +72,6 @@ public class TicketService {
         return ticketRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
                 .stream()
                 .map(this::mapTicket)
-                .toList();
-    }
-
-    public List<WorkflowTaskResponse> getProjectTasks(String projectId) {
-        User currentUser = getCurrentUser();
-        getMembership(projectId, currentUser.getId());
-
-        return workflowTaskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
-                .stream()
-                .map(this::mapTask)
                 .toList();
     }
 
