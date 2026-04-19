@@ -24,6 +24,7 @@ public class TaskService {
     private final UserRepository userRepository;
     private final TramiteTemplateRepository tramiteTemplateRepository;
     private final TicketStepHistoryRepository ticketStepHistoryRepository;
+    private final ParallelJoinStateRepository parallelJoinStateRepository;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -273,97 +274,413 @@ public class TaskService {
         if ("decision".equalsIgnoreCase(task.getNodeType())) {
             nextNode = findDecisionTargetNode(task.getNodeId(), request.getDecisionResult(), nodes, edges);
         } else {
-            nextNode = findNextOperationalNode(task.getNodeId(), nodes, edges);
+            nextNode = findDirectTargetNode(task.getNodeId(), nodes, edges);
         }
 
         if (nextNode == null) {
-            ticket.setStatus(TicketStatus.COMPLETED);
-            ticket.setUpdatedAt(now);
-            ticketRepository.save(ticket);
+            finishTicket(ticket, now);
             return mapTask(task);
         }
 
+        advanceIntoNode(
+                ticket,
+                workflow,
+                nextNode,
+                task.getParallelGroupId(),
+                task.getForkNodeId(),
+                task.getJoinNodeId(),
+                task.getBranchSourceNodeId(),
+                now);
+
+        return mapTask(task);
+    }
+
+    private void finishTicket(Ticket ticket, LocalDateTime now) {
+        ticket.setStatus(TicketStatus.COMPLETED);
+        ticket.setUpdatedAt(now);
+        ticketRepository.save(ticket);
+    }
+    
+
+    private String getNodeType(Map<String, Object> node) {
+        if (node == null)
+            return "";
+
         @SuppressWarnings("unchecked")
-        Map<String, Object> nextNodeData = (Map<String, Object>) nextNode.get("data");
+        Map<String, Object> data = (Map<String, Object>) node.get("data");
 
-        String nextDepartmentId = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("departmentId", ""))
-                : "";
-        String nextDepartmentName = nextNodeData != null
-                ? String.valueOf(nextNodeData.getOrDefault("departmentName", ""))
-                : "";
-        String nextNodeId = String.valueOf(nextNode.getOrDefault("id", ""));
-        String nextNodeLabel = nextNodeData != null
-                ? String.valueOf(nextNodeData.getOrDefault("label", nextNode.getOrDefault("label", "Nodo")))
-                : String.valueOf(nextNode.getOrDefault("label", "Nodo"));
-        String nextNodeType = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("nodeType", "")) : "";
-        String nextDecisionMode = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("decisionMode", ""))
-                : "";
-        String nextDecisionQuestion = nextNodeData != null
-                ? String.valueOf(nextNodeData.getOrDefault("decisionQuestion", ""))
-                : "";
+        return data != null ? String.valueOf(data.getOrDefault("nodeType", "")) : "";
+    }
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, String>> nextDecisionOptions = nextNodeData != null
-                && nextNodeData.get("decisionOptions") instanceof List<?>
-                        ? (List<Map<String, String>>) nextNodeData.get("decisionOptions")
-                        : Collections.emptyList();
+    private Map<String, Object> getNodeById(String nodeId, List<Map<String, Object>> nodes) {
+        for (Map<String, Object> node : nodes) {
+            if (nodeId.equals(String.valueOf(node.get("id")))) {
+                return node;
+            }
+        }
+        return null;
+    }
 
-        if (nextDepartmentId == null || nextDepartmentId.isBlank()) {
-            throw new RuntimeException("El siguiente nodo no tiene departamento asignado");
+    private Map<String, Object> findDirectTargetNode(
+            String sourceNodeId,
+            List<Map<String, Object>> nodes,
+            List<Map<String, Object>> edges) {
+
+        String targetId = findDirectTargetNodeId(sourceNodeId, edges);
+        if (targetId == null)
+            return null;
+
+        return getNodeById(targetId, nodes);
+    }
+
+    private List<String> findDirectTargetNodeIds(String sourceNodeId, List<Map<String, Object>> edges) {
+        List<String> result = new ArrayList<>();
+
+        for (Map<String, Object> edge : edges) {
+            String sourceCellId = extractCellId(edge.get("source"));
+            if (sourceNodeId.equals(sourceCellId)) {
+                String targetCellId = extractCellId(edge.get("target"));
+                if (targetCellId != null) {
+                    result.add(targetCellId);
+                }
+            }
         }
 
-        Department nextDepartment = departmentRepository.findByIdAndProjectId(nextDepartmentId, projectId)
-                .orElseThrow(() -> new RuntimeException("El siguiente departamento no existe"));
+        return result;
+    }
 
-        String nextAssignedUserId = null;
-        String nextAssignedUserName = null;
+    private void createOperationalTask(
+            Ticket ticket,
+            Workflow workflow,
+            Map<String, Object> node,
+            String parallelGroupId,
+            String forkNodeId,
+            String joinNodeId,
+            String branchSourceNodeId,
+            LocalDateTime now) {
 
-        if (nextDepartment.getAssignedUserIds() != null && !nextDepartment.getAssignedUserIds().isEmpty()) {
-            nextAssignedUserId = nextDepartment.getAssignedUserIds().get(0);
-            nextAssignedUserName = userRepository.findById(nextAssignedUserId)
+        @SuppressWarnings("unchecked")
+        Map<String, Object> nodeData = (Map<String, Object>) node.get("data");
+
+        String nodeId = String.valueOf(node.getOrDefault("id", ""));
+        String nodeLabel = nodeData != null
+                ? String.valueOf(nodeData.getOrDefault("label", node.getOrDefault("label", "Nodo")))
+                : String.valueOf(node.getOrDefault("label", "Nodo"));
+
+        String nodeType = nodeData != null ? String.valueOf(nodeData.getOrDefault("nodeType", "")) : "";
+        String departmentId = nodeData != null ? String.valueOf(nodeData.getOrDefault("departmentId", "")) : "";
+        String departmentName = nodeData != null ? String.valueOf(nodeData.getOrDefault("departmentName", "")) : "";
+        String decisionMode = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionMode", "")) : "";
+        String decisionQuestion = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionQuestion", "")) : "";
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> decisionOptions = nodeData != null
+                && nodeData.get("decisionOptions") instanceof List<?>
+                        ? (List<Map<String, String>>) nodeData.get("decisionOptions")
+                        : Collections.emptyList();
+
+        if (departmentId == null || departmentId.isBlank()) {
+            throw new RuntimeException("El nodo " + nodeLabel + " no tiene departamento asignado");
+        }
+
+        Department department = departmentRepository.findByIdAndProjectId(departmentId, ticket.getProjectId())
+                .orElseThrow(() -> new RuntimeException("El departamento del nodo no existe"));
+
+        String assignedUserId = null;
+        String assignedUserName = null;
+
+        if (department.getAssignedUserIds() != null && !department.getAssignedUserIds().isEmpty()) {
+            assignedUserId = department.getAssignedUserIds().get(0);
+            assignedUserName = userRepository.findById(assignedUserId)
                     .map(User::getName)
                     .orElse("Funcionario");
         }
 
-        String nextTramiteName = null;
-        if (nextDepartment.isRequiresTramite() && nextDepartment.getTramiteTemplateId() != null) {
-            nextTramiteName = tramiteTemplateRepository.findById(nextDepartment.getTramiteTemplateId())
+        String tramiteTemplateName = null;
+        if (department.isRequiresTramite() && department.getTramiteTemplateId() != null) {
+            tramiteTemplateName = tramiteTemplateRepository.findById(department.getTramiteTemplateId())
                     .map(TramiteTemplate::getName)
                     .orElse(null);
         }
 
         WorkflowTask nextTask = WorkflowTask.builder()
-                .projectId(projectId)
+                .projectId(ticket.getProjectId())
                 .ticketId(ticket.getId())
                 .workflowId(workflow.getId())
-                .nodeId(nextNodeId)
-                .nodeLabel(nextNodeLabel)
-                .nodeType(nextNodeType)
-                .departmentId(nextDepartment.getId())
-                .departmentName(nextDepartmentName != null && !nextDepartmentName.isBlank() ? nextDepartmentName
-                        : nextDepartment.getName())
-                .assignedUserId(nextAssignedUserId)
-                .assignedUserName(nextAssignedUserName)
-                .requiresTramite(nextDepartment.isRequiresTramite())
-                .tramiteTemplateId(nextDepartment.getTramiteTemplateId())
-                .tramiteTemplateName(nextTramiteName)
-                .decisionMode(nextDecisionMode)
-                .decisionQuestion(nextDecisionQuestion)
-                .decisionOptions(nextDecisionOptions)
+                .nodeId(nodeId)
+                .nodeLabel(nodeLabel)
+                .nodeType(nodeType)
+                .departmentId(department.getId())
+                .departmentName(
+                        departmentName != null && !departmentName.isBlank() ? departmentName : department.getName())
+                .assignedUserId(assignedUserId)
+                .assignedUserName(assignedUserName)
+                .requiresTramite(department.isRequiresTramite())
+                .tramiteTemplateId(department.getTramiteTemplateId())
+                .tramiteTemplateName(tramiteTemplateName)
+                .decisionMode(decisionMode)
+                .decisionQuestion(decisionQuestion)
+                .decisionOptions(decisionOptions)
                 .status(TaskStatus.PENDING)
+                .parallelGroupId(parallelGroupId)
+                .forkNodeId(forkNodeId)
+                .joinNodeId(joinNodeId)
+                .branchSourceNodeId(branchSourceNodeId)
                 .createdAt(now)
                 .build();
 
         workflowTaskRepository.save(nextTask);
 
         ticket.setStatus(TicketStatus.IN_PROGRESS);
-        ticket.setCurrentNodeId(nextNodeId);
-        ticket.setCurrentDepartmentId(nextDepartment.getId());
-        ticket.setCurrentDepartmentName(nextDepartment.getName());
+        ticket.setCurrentNodeId(nodeId);
+        ticket.setCurrentDepartmentId(department.getId());
+        ticket.setCurrentDepartmentName(department.getName());
         ticket.setUpdatedAt(now);
         ticketRepository.save(ticket);
+    }
+    
 
-        return mapTask(task);
+    private void advanceIntoNode(
+            Ticket ticket,
+            Workflow workflow,
+            Map<String, Object> node,
+            String parallelGroupId,
+            String forkNodeId,
+            String joinNodeId,
+            String branchSourceNodeId,
+            LocalDateTime now) {
+
+        if (node == null) {
+            finishTicket(ticket, now);
+            return;
+        }
+
+        List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
+        List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
+
+        String nodeId = String.valueOf(node.get("id"));
+        String nodeType = getNodeType(node);
+
+        switch (nodeType.toLowerCase()) {
+            case "task":
+            case "activity":
+            case "decision":
+                createOperationalTask(ticket, workflow, node, parallelGroupId, forkNodeId, joinNodeId,
+                        branchSourceNodeId, now);
+                break;
+
+            case "fork":
+                openParallel(ticket, workflow, nodeId, now);
+                break;
+
+            case "join":
+                arriveToJoin(ticket, workflow, nodeId, parallelGroupId, forkNodeId, branchSourceNodeId, now);
+                break;
+
+            case "merge":
+            case "start":
+                advanceIntoNode(
+                        ticket,
+                        workflow,
+                        findDirectTargetNode(nodeId, nodes, edges),
+                        parallelGroupId,
+                        forkNodeId,
+                        joinNodeId,
+                        branchSourceNodeId,
+                        now);
+                break;
+
+            case "end":
+                finishTicket(ticket, now);
+                break;
+
+            default:
+                throw new RuntimeException("Tipo de nodo no soportado: " + nodeType);
+        }
+    }
+
+    private void openParallel(Ticket ticket, Workflow workflow, String forkNodeId, LocalDateTime now) {
+        List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
+        List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
+
+        List<String> branchTargets = findDirectTargetNodeIds(forkNodeId, edges);
+
+        if (branchTargets.size() < 2) {
+            throw new RuntimeException("El fork debe tener al menos 2 salidas");
+        }
+
+        String commonJoinNodeId = findCommonJoinNodeId(branchTargets, nodes, edges);
+        String parallelGroupId = UUID.randomUUID().toString();
+
+        ParallelJoinState joinState = ParallelJoinState.builder()
+                .projectId(ticket.getProjectId())
+                .ticketId(ticket.getId())
+                .workflowId(workflow.getId())
+                .parallelGroupId(parallelGroupId)
+                .forkNodeId(forkNodeId)
+                .joinNodeId(commonJoinNodeId)
+                .expectedBranches(branchTargets.size())
+                .arrivedBranchSourceNodeIds(new ArrayList<>())
+                .released(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        parallelJoinStateRepository.save(joinState);
+
+        for (String branchStartId : branchTargets) {
+            Map<String, Object> branchNode = getNodeById(branchStartId, nodes);
+
+            advanceIntoNode(
+                    ticket,
+                    workflow,
+                    branchNode,
+                    parallelGroupId,
+                    forkNodeId,
+                    commonJoinNodeId,
+                    branchStartId,
+                    now);
+        }
+    }
+
+    private void arriveToJoin(
+            Ticket ticket,
+            Workflow workflow,
+            String joinNodeId,
+            String parallelGroupId,
+            String forkNodeId,
+            String branchSourceNodeId,
+            LocalDateTime now) {
+
+        if (parallelGroupId == null || parallelGroupId.isBlank()) {
+            throw new RuntimeException("El join fue alcanzado sin parallelGroupId");
+        }
+
+        ParallelJoinState joinState = parallelJoinStateRepository
+                .findByTicketIdAndJoinNodeIdAndParallelGroupId(ticket.getId(), joinNodeId, parallelGroupId)
+                .orElseThrow(() -> new RuntimeException("No se encontró el estado del join paralelo"));
+
+        if (joinState.isReleased()) {
+            return;
+        }
+
+        List<String> arrived = joinState.getArrivedBranchSourceNodeIds() != null
+                ? joinState.getArrivedBranchSourceNodeIds()
+                : new ArrayList<>();
+
+        if (branchSourceNodeId != null && !arrived.contains(branchSourceNodeId)) {
+            arrived.add(branchSourceNodeId);
+        }
+
+        joinState.setArrivedBranchSourceNodeIds(arrived);
+        joinState.setUpdatedAt(now);
+
+        if (arrived.size() < joinState.getExpectedBranches()) {
+            parallelJoinStateRepository.save(joinState);
+            return;
+        }
+
+        joinState.setReleased(true);
+        joinState.setReleasedAt(now);
+        parallelJoinStateRepository.save(joinState);
+
+        List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
+        List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
+
+        Map<String, Object> nextNode = findDirectTargetNode(joinNodeId, nodes, edges);
+
+        if (nextNode == null) {
+            finishTicket(ticket, now);
+            return;
+        }
+
+        advanceIntoNode(ticket, workflow, nextNode, null, null, null, null, now);
+    }
+
+    public void startWorkflowForTicket(Ticket ticket, Workflow workflow) {
+    LocalDateTime now = LocalDateTime.now();
+
+    List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
+    List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
+
+    Map<String, Object> startNode = null;
+
+    for (Map<String, Object> node : nodes) {
+        String nodeType = getNodeType(node);
+        if ("start".equalsIgnoreCase(nodeType)) {
+            startNode = node;
+            break;
+        }
+    }
+
+    if (startNode == null) {
+        throw new RuntimeException("El workflow no tiene nodo start");
+    }
+
+    String startNodeId = String.valueOf(startNode.get("id"));
+    Map<String, Object> firstNode = findDirectTargetNode(startNodeId, nodes, edges);
+
+    if (firstNode == null) {
+        throw new RuntimeException("El nodo start no tiene un siguiente nodo");
+    }
+
+    advanceIntoNode(ticket, workflow, firstNode, null, null, null, null, now);
+}
+
+    private String findCommonJoinNodeId(
+            List<String> branchTargets,
+            List<Map<String, Object>> nodes,
+            List<Map<String, Object>> edges) {
+
+        Set<String> joinIds = new HashSet<>();
+
+        for (String branchStartId : branchTargets) {
+            String joinId = findFirstJoinAhead(branchStartId, nodes, edges, new HashSet<>());
+            if (joinId == null) {
+                throw new RuntimeException("Una rama paralela no llega a ningún join");
+            }
+            joinIds.add(joinId);
+        }
+
+        if (joinIds.size() != 1) {
+            throw new RuntimeException("Todas las ramas del fork deben converger en el mismo join");
+        }
+
+        return joinIds.iterator().next();
+    }
+
+    private String findFirstJoinAhead(
+            String currentNodeId,
+            List<Map<String, Object>> nodes,
+            List<Map<String, Object>> edges,
+            Set<String> visited) {
+
+        if (currentNodeId == null || visited.contains(currentNodeId)) {
+            return null;
+        }
+
+        visited.add(currentNodeId);
+
+        Map<String, Object> node = getNodeById(currentNodeId, nodes);
+        if (node == null) {
+            return null;
+        }
+
+        String nodeType = getNodeType(node);
+        if ("join".equalsIgnoreCase(nodeType)) {
+            return currentNodeId;
+        }
+
+        List<String> nextIds = findDirectTargetNodeIds(currentNodeId, edges);
+
+        for (String nextId : nextIds) {
+            String found = findFirstJoinAhead(nextId, nodes, edges, visited);
+            if (found != null) {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     private Map<String, Object> findDecisionTargetNode(
@@ -443,6 +760,7 @@ public class TaskService {
 
         return null;
     }
+
 
     private String extractCellId(Object endpoint) {
         if (endpoint instanceof String str) {

@@ -3,28 +3,27 @@ package com.parcial1.service;
 import com.parcial1.dto.CreateTicketRequest;
 import com.parcial1.dto.TicketResponse;
 import com.parcial1.model.*;
-import com.parcial1.repository.*;
+import com.parcial1.repository.ProjectMemberRepository;
+import com.parcial1.repository.TicketRepository;
+import com.parcial1.repository.UserRepository;
+import com.parcial1.repository.WorkflowRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class TicketService {
 
     private final TicketRepository ticketRepository;
-    private final WorkflowTaskRepository workflowTaskRepository;
     private final WorkflowRepository workflowRepository;
-    private final DepartmentRepository departmentRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final UserRepository userRepository;
-    private final TramiteTemplateRepository tramiteTemplateRepository;
+    private final TaskService taskService;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -90,55 +89,6 @@ public class TicketService {
             throw new RuntimeException("Solo puedes crear tickets con workflows en producción");
         }
 
-        List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
-
-        Map<String, Object> firstOperationalNode = nodes.stream()
-                .filter(node -> {
-                    Object dataObj = node.get("data");
-                    if (!(dataObj instanceof Map<?, ?> data))
-                        return false;
-
-                    Object nodeType = data.get("nodeType");
-                    return "task".equals(String.valueOf(nodeType)) || "decision".equals(String.valueOf(nodeType));
-                })
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("El workflow no tiene un primer nodo operativo"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> nodeData = (Map<String, Object>) firstOperationalNode.get("data");
-
-        String departmentId = nodeData != null ? String.valueOf(nodeData.getOrDefault("departmentId", "")) : "";
-        String departmentName = nodeData != null ? String.valueOf(nodeData.getOrDefault("departmentName", "")) : "";
-        String nodeId = String.valueOf(firstOperationalNode.getOrDefault("id", ""));
-        String nodeLabel = nodeData != null
-                ? String.valueOf(nodeData.getOrDefault("label", firstOperationalNode.getOrDefault("label", "Nodo")))
-                : String.valueOf(firstOperationalNode.getOrDefault("label", "Nodo"));
-
-        if (departmentId == null || departmentId.isBlank()) {
-            throw new RuntimeException("El primer nodo operativo no tiene departamento asignado");
-        }
-
-        Department department = departmentRepository.findByIdAndProjectId(departmentId, projectId)
-                .orElseThrow(() -> new RuntimeException("El departamento del primer nodo no existe"));
-
-        String assignedUserId = null;
-        String assignedUserName = null;
-
-        if (department.getAssignedUserIds() != null && !department.getAssignedUserIds().isEmpty()) {
-            assignedUserId = department.getAssignedUserIds().get(0);
-
-            assignedUserName = userRepository.findById(assignedUserId)
-                    .map(User::getName)
-                    .orElse("Funcionario");
-        }
-
-        String tramiteTemplateName = null;
-        if (department.isRequiresTramite() && department.getTramiteTemplateId() != null) {
-            tramiteTemplateName = tramiteTemplateRepository.findById(department.getTramiteTemplateId())
-                    .map(TramiteTemplate::getName)
-                    .orElse(null);
-        }
-
         LocalDateTime now = LocalDateTime.now();
 
         Ticket ticket = Ticket.builder()
@@ -152,10 +102,9 @@ public class TicketService {
                 .clientEmail(request.getClientEmail())
                 .clientReference(request.getClientReference())
                 .status(TicketStatus.OPEN)
-                .currentDepartmentId(department.getId())
-                .currentDepartmentName(
-                        departmentName != null && !departmentName.isBlank() ? departmentName : department.getName())
-                .currentNodeId(nodeId)
+                .currentDepartmentId(null)
+                .currentDepartmentName(null)
+                .currentNodeId(null)
                 .createdBy(currentUser.getId())
                 .createdAt(now)
                 .updatedAt(now)
@@ -164,39 +113,11 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.save(ticket);
 
-        String nodeType = nodeData != null ? String.valueOf(nodeData.getOrDefault("nodeType", "")) : "";
-        String decisionMode = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionMode", "")) : "";
-        String decisionQuestion = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionQuestion", "")) : "";
+        taskService.startWorkflowForTicket(savedTicket, workflow);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, String>> decisionOptions = nodeData != null
-                && nodeData.get("decisionOptions") instanceof List<?>
-                        ? (List<Map<String, String>>) nodeData.get("decisionOptions")
-                        : Collections.emptyList();
+        Ticket updatedTicket = ticketRepository.findById(savedTicket.getId())
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado después de iniciar el workflow"));
 
-        WorkflowTask task = WorkflowTask.builder()
-                .projectId(projectId)
-                .ticketId(savedTicket.getId())
-                .workflowId(workflow.getId())
-                .nodeId(nodeId)
-                .nodeLabel(nodeLabel)
-                .nodeType(nodeType)
-                .departmentId(department.getId())
-                .departmentName(department.getName())
-                .assignedUserId(assignedUserId)
-                .assignedUserName(assignedUserName)
-                .requiresTramite(department.isRequiresTramite())
-                .tramiteTemplateId(department.getTramiteTemplateId())
-                .tramiteTemplateName(tramiteTemplateName)
-                .decisionMode(decisionMode)
-                .decisionQuestion(decisionQuestion)
-                .decisionOptions(decisionOptions)
-                .status(TaskStatus.PENDING)
-                .createdAt(now)
-                .build();
-
-        workflowTaskRepository.save(task);
-
-        return mapTicket(savedTicket);
+        return mapTicket(updatedTicket);
     }
 }

@@ -45,6 +45,11 @@ public class WorkflowTask {
 
     private Map<String, Object> submittedTramiteData;
 
+    private String parallelGroupId;
+    private String forkNodeId;
+    private String joinNodeId;
+    private String branchSourceNodeId;
+
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
