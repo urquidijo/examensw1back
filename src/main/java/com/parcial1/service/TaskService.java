@@ -47,6 +47,9 @@ public class TaskService {
     }
 
     private WorkflowTaskResponse mapTask(WorkflowTask task) {
+        Ticket ticket = ticketRepository.findByIdAndProjectId(task.getTicketId(), task.getProjectId())
+                .orElse(null);
+
         return WorkflowTaskResponse.builder()
                 .id(task.getId())
                 .projectId(task.getProjectId())
@@ -63,11 +66,12 @@ public class TaskService {
                 .tramiteTemplateId(task.getTramiteTemplateId())
                 .tramiteTemplateName(task.getTramiteTemplateName())
                 .decisionMode(task.getDecisionMode())
-                .uploadedFiles(task.getUploadedFiles())
                 .decisionQuestion(task.getDecisionQuestion())
                 .decisionOptions(task.getDecisionOptions())
                 .status(task.getStatus())
                 .submittedTramiteData(task.getSubmittedTramiteData())
+                .uploadedFiles(task.getUploadedFiles())
+                .ticket(mapTicketInfo(ticket))
                 .createdAt(task.getCreatedAt())
                 .startedAt(task.getStartedAt())
                 .completedAt(task.getCompletedAt())
@@ -343,6 +347,25 @@ public class TaskService {
         Map<String, Object> data = (Map<String, Object>) node.get("data");
 
         return data != null ? String.valueOf(data.getOrDefault("nodeType", "")) : "";
+    }
+
+    private TicketTaskInfoResponse mapTicketInfo(Ticket ticket) {
+        if (ticket == null) {
+            return null;
+        }
+
+        return TicketTaskInfoResponse.builder()
+                .id(ticket.getId())
+                .title(ticket.getTitle())
+                .description(ticket.getDescription())
+                .clientName(ticket.getClientName())
+                .clientPhone(ticket.getClientPhone())
+                .clientEmail(ticket.getClientEmail())
+                .clientReference(ticket.getClientReference())
+                .status(ticket.getStatus())
+                .metadata(ticket.getMetadata())
+                .uploadedFiles(ticket.getUploadedFiles())
+                .build();
     }
 
     private Map<String, Object> getNodeById(String nodeId, List<Map<String, Object>> nodes) {

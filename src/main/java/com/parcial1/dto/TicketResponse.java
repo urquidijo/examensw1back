@@ -1,11 +1,13 @@
 package com.parcial1.dto;
 
+import com.parcial1.model.StoredFileInfo;
 import com.parcial1.model.TicketStatus;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Getter
@@ -26,6 +28,7 @@ public class TicketResponse {
     private String clientReference;
 
     private TicketStatus status;
+    private List<StoredFileInfo> uploadedFiles;
 
     private String currentDepartmentId;
     private String currentDepartmentName;

@@ -45,6 +45,30 @@ public class S3StorageService {
         return key;
     }
 
+    public StoredFileInfo uploadTicketAttachment(String ticketId, MultipartFile file, String uploadedBy)
+            throws IOException {
+        String key = buildTicketKey(ticketId, file.getOriginalFilename());
+        upload(file, key);
+
+        return StoredFileInfo.builder()
+                .key(key)
+                .bucket(bucket)
+                .originalName(file.getOriginalFilename())
+                .contentType(file.getContentType())
+                .size(file.getSize())
+                .uploadedBy(uploadedBy)
+                .uploadedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private String buildTicketKey(String ticketId, String originalFilename) {
+        String safeName = sanitizeFilename(originalFilename);
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String random = UUID.randomUUID().toString().substring(0, 8);
+
+        return "tickets/" + ticketId + "/" + timestamp + "-" + random + "-" + safeName;
+    }
+
     public byte[] download(String key) {
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucket)

@@ -38,6 +38,8 @@ public class WorkflowTaskResponse {
     private List<Map<String, String>> decisionOptions;
     private List<StoredFileInfo> uploadedFiles;
 
+    private TicketTaskInfoResponse ticket;
+
     private TaskStatus status;
 
     private Map<String, Object> submittedTramiteData;

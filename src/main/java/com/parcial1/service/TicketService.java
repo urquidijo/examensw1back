@@ -1,6 +1,7 @@
 package com.parcial1.service;
 
 import com.parcial1.dto.CreateTicketRequest;
+import com.parcial1.dto.TicketFileDownloadResponse;
 import com.parcial1.dto.TicketResponse;
 import com.parcial1.model.*;
 import com.parcial1.repository.ProjectMemberRepository;
@@ -11,8 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,6 +27,7 @@ public class TicketService {
     private final ProjectMemberRepository projectMemberRepository;
     private final UserRepository userRepository;
     private final TaskService taskService;
+    private final S3StorageService s3StorageService;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -61,8 +65,38 @@ public class TicketService {
                 .createdAt(ticket.getCreatedAt())
                 .updatedAt(ticket.getUpdatedAt())
                 .metadata(ticket.getMetadata())
+                .uploadedFiles(ticket.getUploadedFiles())
                 .build();
     }
+
+    public TicketFileDownloadResponse downloadTicketFile(String projectId, String ticketId, String key) {
+        User currentUser = getCurrentUser();
+        getMembership(projectId, currentUser.getId());
+
+        Ticket ticket = ticketRepository.findByIdAndProjectId(ticketId, projectId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        StoredFileInfo fileInfo = ticket.getUploadedFiles() == null
+                ? null
+                : ticket.getUploadedFiles().stream()
+                        .filter(file -> key.equals(file.getKey()))
+                        .findFirst()
+                        .orElse(null);
+
+        if (fileInfo == null) {
+            throw new RuntimeException("Archivo del ticket no encontrado");
+        }
+
+        byte[] content = s3StorageService.download(fileInfo.getKey());
+
+        return TicketFileDownloadResponse.builder()
+                .content(content)
+                .originalName(fileInfo.getOriginalName())
+                .contentType(fileInfo.getContentType())
+                .build();
+    }
+
+    
 
     public List<TicketResponse> getTickets(String projectId) {
         User currentUser = getCurrentUser();
@@ -74,7 +108,7 @@ public class TicketService {
                 .toList();
     }
 
-    public TicketResponse createTicket(String projectId, CreateTicketRequest request) {
+    public TicketResponse createTicket(String projectId, CreateTicketRequest request, List<MultipartFile> files) {
         User currentUser = getCurrentUser();
         getMembership(projectId, currentUser.getId());
 
@@ -109,9 +143,34 @@ public class TicketService {
                 .createdAt(now)
                 .updatedAt(now)
                 .metadata(request.getMetadata())
+                .uploadedFiles(new ArrayList<>())
                 .build();
 
         Ticket savedTicket = ticketRepository.save(ticket);
+
+        List<StoredFileInfo> uploadedFiles = new ArrayList<>();
+
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+
+                try {
+                    StoredFileInfo storedFile = s3StorageService.uploadTicketAttachment(
+                            savedTicket.getId(),
+                            file,
+                            currentUser.getId());
+                    uploadedFiles.add(storedFile);
+                } catch (Exception e) {
+                    throw new RuntimeException("No se pudo subir uno de los archivos del ticket");
+                }
+            }
+        }
+
+        savedTicket.setUploadedFiles(uploadedFiles);
+        savedTicket.setUpdatedAt(LocalDateTime.now());
+        savedTicket = ticketRepository.save(savedTicket);
 
         taskService.startWorkflowForTicket(savedTicket, workflow);
 
