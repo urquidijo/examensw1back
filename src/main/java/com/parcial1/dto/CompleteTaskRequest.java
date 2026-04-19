@@ -9,4 +9,5 @@ import java.util.Map;
 @Setter
 public class CompleteTaskRequest {
     private Map<String, Object> tramiteData;
+    private String decisionResult;
 }

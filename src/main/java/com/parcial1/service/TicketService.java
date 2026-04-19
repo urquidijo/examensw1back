@@ -95,7 +95,8 @@ public class TicketService {
         Map<String, Object> firstOperationalNode = nodes.stream()
                 .filter(node -> {
                     Object dataObj = node.get("data");
-                    if (!(dataObj instanceof Map<?, ?> data)) return false;
+                    if (!(dataObj instanceof Map<?, ?> data))
+                        return false;
 
                     Object nodeType = data.get("nodeType");
                     return "task".equals(String.valueOf(nodeType)) || "decision".equals(String.valueOf(nodeType));
@@ -152,7 +153,8 @@ public class TicketService {
                 .clientReference(request.getClientReference())
                 .status(TicketStatus.OPEN)
                 .currentDepartmentId(department.getId())
-                .currentDepartmentName(departmentName != null && !departmentName.isBlank() ? departmentName : department.getName())
+                .currentDepartmentName(
+                        departmentName != null && !departmentName.isBlank() ? departmentName : department.getName())
                 .currentNodeId(nodeId)
                 .createdBy(currentUser.getId())
                 .createdAt(now)
@@ -162,12 +164,23 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.save(ticket);
 
+        String nodeType = nodeData != null ? String.valueOf(nodeData.getOrDefault("nodeType", "")) : "";
+        String decisionMode = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionMode", "")) : "";
+        String decisionQuestion = nodeData != null ? String.valueOf(nodeData.getOrDefault("decisionQuestion", "")) : "";
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> decisionOptions = nodeData != null
+                && nodeData.get("decisionOptions") instanceof List<?>
+                        ? (List<Map<String, String>>) nodeData.get("decisionOptions")
+                        : Collections.emptyList();
+
         WorkflowTask task = WorkflowTask.builder()
                 .projectId(projectId)
                 .ticketId(savedTicket.getId())
                 .workflowId(workflow.getId())
                 .nodeId(nodeId)
                 .nodeLabel(nodeLabel)
+                .nodeType(nodeType)
                 .departmentId(department.getId())
                 .departmentName(department.getName())
                 .assignedUserId(assignedUserId)
@@ -175,6 +188,9 @@ public class TicketService {
                 .requiresTramite(department.isRequiresTramite())
                 .tramiteTemplateId(department.getTramiteTemplateId())
                 .tramiteTemplateName(tramiteTemplateName)
+                .decisionMode(decisionMode)
+                .decisionQuestion(decisionQuestion)
+                .decisionOptions(decisionOptions)
                 .status(TaskStatus.PENDING)
                 .createdAt(now)
                 .build();

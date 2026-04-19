@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Getter
@@ -19,6 +20,7 @@ public class WorkflowTaskResponse {
     private String workflowId;
     private String nodeId;
     private String nodeLabel;
+    private String nodeType;
 
     private String departmentId;
     private String departmentName;
@@ -29,6 +31,10 @@ public class WorkflowTaskResponse {
     private boolean requiresTramite;
     private String tramiteTemplateId;
     private String tramiteTemplateName;
+
+    private String decisionMode;
+    private String decisionQuestion;
+    private List<Map<String, String>> decisionOptions;
 
     private TaskStatus status;
 

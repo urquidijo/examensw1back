@@ -49,6 +49,7 @@ public class TaskService {
                 .workflowId(task.getWorkflowId())
                 .nodeId(task.getNodeId())
                 .nodeLabel(task.getNodeLabel())
+                .nodeType(task.getNodeType())
                 .departmentId(task.getDepartmentId())
                 .departmentName(task.getDepartmentName())
                 .assignedUserId(task.getAssignedUserId())
@@ -56,6 +57,9 @@ public class TaskService {
                 .requiresTramite(task.isRequiresTramite())
                 .tramiteTemplateId(task.getTramiteTemplateId())
                 .tramiteTemplateName(task.getTramiteTemplateName())
+                .decisionMode(task.getDecisionMode())
+                .decisionQuestion(task.getDecisionQuestion())
+                .decisionOptions(task.getDecisionOptions())
                 .status(task.getStatus())
                 .submittedTramiteData(task.getSubmittedTramiteData())
                 .createdAt(task.getCreatedAt())
@@ -72,6 +76,7 @@ public class TaskService {
                 .workflowId(item.getWorkflowId())
                 .nodeId(item.getNodeId())
                 .nodeLabel(item.getNodeLabel())
+                .nodeType(item.getNodeType())
                 .departmentId(item.getDepartmentId())
                 .departmentName(item.getDepartmentName())
                 .assignedUserId(item.getAssignedUserId())
@@ -79,6 +84,7 @@ public class TaskService {
                 .requiresTramite(item.isRequiresTramite())
                 .tramiteTemplateId(item.getTramiteTemplateId())
                 .tramiteTemplateName(item.getTramiteTemplateName())
+                .decisionResult(item.getDecisionResult())
                 .submittedTramiteData(item.getSubmittedTramiteData())
                 .startedAt(item.getStartedAt())
                 .completedAt(item.getCompletedAt())
@@ -93,7 +99,8 @@ public class TaskService {
 
         if (membership.getRole() != ProjectRole.ADMINISTRADOR) {
             departments = departments.stream()
-                    .filter(dep -> dep.getAssignedUserIds() != null && dep.getAssignedUserIds().contains(currentUser.getId()))
+                    .filter(dep -> dep.getAssignedUserIds() != null
+                            && dep.getAssignedUserIds().contains(currentUser.getId()))
                     .toList();
         }
 
@@ -102,17 +109,17 @@ public class TaskService {
                     long activeCount = workflowTaskRepository
                             .findByDepartmentIdOrderByCreatedAtDesc(dep.getId())
                             .stream()
-                            .filter(task ->
-                                    task.getProjectId().equals(projectId) &&
-                                    (task.getStatus() == TaskStatus.PENDING || task.getStatus() == TaskStatus.IN_PROGRESS)
-                            )
+                            .filter(task -> task.getProjectId().equals(projectId) &&
+                                    (task.getStatus() == TaskStatus.PENDING
+                                            || task.getStatus() == TaskStatus.IN_PROGRESS))
                             .count();
 
                     long completedCount = ticketStepHistoryRepository
                             .findByProjectIdAndDepartmentIdOrderByCompletedAtDesc(projectId, dep.getId())
                             .size();
 
-                    boolean assignedToMe = dep.getAssignedUserIds() != null && dep.getAssignedUserIds().contains(currentUser.getId());
+                    boolean assignedToMe = dep.getAssignedUserIds() != null
+                            && dep.getAssignedUserIds().contains(currentUser.getId());
 
                     return DepartmentTaskBoardResponse.builder()
                             .departmentId(dep.getId())
@@ -133,7 +140,8 @@ public class TaskService {
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
 
         if (membership.getRole() != ProjectRole.ADMINISTRADOR &&
-                (department.getAssignedUserIds() == null || !department.getAssignedUserIds().contains(currentUser.getId()))) {
+                (department.getAssignedUserIds() == null
+                        || !department.getAssignedUserIds().contains(currentUser.getId()))) {
             throw new RuntimeException("No perteneces a este departamento");
         }
 
@@ -141,7 +149,8 @@ public class TaskService {
             return workflowTaskRepository.findByDepartmentIdOrderByCreatedAtDesc(departmentId)
                     .stream()
                     .filter(task -> task.getProjectId().equals(projectId))
-                    .filter(task -> task.getStatus() == TaskStatus.PENDING || task.getStatus() == TaskStatus.IN_PROGRESS)
+                    .filter(task -> task.getStatus() == TaskStatus.PENDING
+                            || task.getStatus() == TaskStatus.IN_PROGRESS)
                     .map(this::mapTask)
                     .toList();
         }
@@ -151,8 +160,7 @@ public class TaskService {
                         projectId,
                         currentUser.getId(),
                         departmentId,
-                        List.of(TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
-                )
+                        List.of(TaskStatus.PENDING, TaskStatus.IN_PROGRESS))
                 .stream()
                 .map(this::mapTask)
                 .toList();
@@ -181,7 +189,8 @@ public class TaskService {
         Department department = departmentRepository.findByIdAndProjectId(departmentId, projectId)
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
 
-        boolean isAssigned = department.getAssignedUserIds() != null && department.getAssignedUserIds().contains(currentUser.getId());
+        boolean isAssigned = department.getAssignedUserIds() != null
+                && department.getAssignedUserIds().contains(currentUser.getId());
 
         if (membership.getRole() != ProjectRole.ADMINISTRADOR && !isAssigned) {
             throw new RuntimeException("No tienes acceso a este departamento");
@@ -209,8 +218,15 @@ public class TaskService {
             throw new RuntimeException("La tarea ya fue completada");
         }
 
-        if (task.isRequiresTramite() && (request == null || request.getTramiteData() == null || request.getTramiteData().isEmpty())) {
+        if (task.isRequiresTramite()
+                && (request == null || request.getTramiteData() == null || request.getTramiteData().isEmpty())) {
             throw new RuntimeException("Debes completar el trámite antes de finalizar");
+        }
+
+        if ("decision".equalsIgnoreCase(task.getNodeType())) {
+            if (request == null || request.getDecisionResult() == null || request.getDecisionResult().isBlank()) {
+                throw new RuntimeException("Debes seleccionar una opción de decisión");
+            }
         }
 
         Ticket ticket = ticketRepository.findByIdAndProjectId(task.getTicketId(), projectId)
@@ -233,6 +249,7 @@ public class TaskService {
                 .workflowId(task.getWorkflowId())
                 .nodeId(task.getNodeId())
                 .nodeLabel(task.getNodeLabel())
+                .nodeType(task.getNodeType())
                 .departmentId(task.getDepartmentId())
                 .departmentName(task.getDepartmentName())
                 .assignedUserId(task.getAssignedUserId())
@@ -240,6 +257,7 @@ public class TaskService {
                 .requiresTramite(task.isRequiresTramite())
                 .tramiteTemplateId(task.getTramiteTemplateId())
                 .tramiteTemplateName(task.getTramiteTemplateName())
+                .decisionResult(request != null ? request.getDecisionResult() : null)
                 .submittedTramiteData(task.getSubmittedTramiteData())
                 .startedAt(task.getStartedAt())
                 .completedAt(now)
@@ -250,7 +268,13 @@ public class TaskService {
         List<Map<String, Object>> nodes = workflow.getNodes() != null ? workflow.getNodes() : Collections.emptyList();
         List<Map<String, Object>> edges = workflow.getEdges() != null ? workflow.getEdges() : Collections.emptyList();
 
-        Map<String, Object> nextNode = findNextOperationalNode(task.getNodeId(), nodes, edges);
+        Map<String, Object> nextNode;
+
+        if ("decision".equalsIgnoreCase(task.getNodeType())) {
+            nextNode = findDecisionTargetNode(task.getNodeId(), request.getDecisionResult(), nodes, edges);
+        } else {
+            nextNode = findNextOperationalNode(task.getNodeId(), nodes, edges);
+        }
 
         if (nextNode == null) {
             ticket.setStatus(TicketStatus.COMPLETED);
@@ -262,12 +286,27 @@ public class TaskService {
         @SuppressWarnings("unchecked")
         Map<String, Object> nextNodeData = (Map<String, Object>) nextNode.get("data");
 
-        String nextDepartmentId = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("departmentId", "")) : "";
-        String nextDepartmentName = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("departmentName", "")) : "";
+        String nextDepartmentId = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("departmentId", ""))
+                : "";
+        String nextDepartmentName = nextNodeData != null
+                ? String.valueOf(nextNodeData.getOrDefault("departmentName", ""))
+                : "";
         String nextNodeId = String.valueOf(nextNode.getOrDefault("id", ""));
         String nextNodeLabel = nextNodeData != null
                 ? String.valueOf(nextNodeData.getOrDefault("label", nextNode.getOrDefault("label", "Nodo")))
                 : String.valueOf(nextNode.getOrDefault("label", "Nodo"));
+        String nextNodeType = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("nodeType", "")) : "";
+        String nextDecisionMode = nextNodeData != null ? String.valueOf(nextNodeData.getOrDefault("decisionMode", ""))
+                : "";
+        String nextDecisionQuestion = nextNodeData != null
+                ? String.valueOf(nextNodeData.getOrDefault("decisionQuestion", ""))
+                : "";
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> nextDecisionOptions = nextNodeData != null
+                && nextNodeData.get("decisionOptions") instanceof List<?>
+                        ? (List<Map<String, String>>) nextNodeData.get("decisionOptions")
+                        : Collections.emptyList();
 
         if (nextDepartmentId == null || nextDepartmentId.isBlank()) {
             throw new RuntimeException("El siguiente nodo no tiene departamento asignado");
@@ -299,13 +338,18 @@ public class TaskService {
                 .workflowId(workflow.getId())
                 .nodeId(nextNodeId)
                 .nodeLabel(nextNodeLabel)
+                .nodeType(nextNodeType)
                 .departmentId(nextDepartment.getId())
-                .departmentName(nextDepartmentName != null && !nextDepartmentName.isBlank() ? nextDepartmentName : nextDepartment.getName())
+                .departmentName(nextDepartmentName != null && !nextDepartmentName.isBlank() ? nextDepartmentName
+                        : nextDepartment.getName())
                 .assignedUserId(nextAssignedUserId)
                 .assignedUserName(nextAssignedUserName)
                 .requiresTramite(nextDepartment.isRequiresTramite())
                 .tramiteTemplateId(nextDepartment.getTramiteTemplateId())
                 .tramiteTemplateName(nextTramiteName)
+                .decisionMode(nextDecisionMode)
+                .decisionQuestion(nextDecisionQuestion)
+                .decisionOptions(nextDecisionOptions)
                 .status(TaskStatus.PENDING)
                 .createdAt(now)
                 .build();
@@ -322,11 +366,37 @@ public class TaskService {
         return mapTask(task);
     }
 
+    private Map<String, Object> findDecisionTargetNode(
+            String decisionNodeId,
+            String decisionResult,
+            List<Map<String, Object>> nodes,
+            List<Map<String, Object>> edges) {
+        Map<String, Map<String, Object>> nodeMap = nodes.stream()
+                .collect(Collectors.toMap(node -> String.valueOf(node.get("id")), node -> node, (a, b) -> a));
+
+        for (Map<String, Object> edge : edges) {
+            String sourceCellId = extractCellId(edge.get("source"));
+            if (!decisionNodeId.equals(sourceCellId)) {
+                continue;
+            }
+
+            String conditionValue = edge.get("conditionValue") != null
+                    ? String.valueOf(edge.get("conditionValue"))
+                    : null;
+
+            if (conditionValue != null && conditionValue.equalsIgnoreCase(decisionResult)) {
+                String targetCellId = extractCellId(edge.get("target"));
+                return nodeMap.get(targetCellId);
+            }
+        }
+
+        throw new RuntimeException("No se encontró una ruta para la decisión seleccionada");
+    }
+
     private Map<String, Object> findNextOperationalNode(
             String currentNodeId,
             List<Map<String, Object>> nodes,
-            List<Map<String, Object>> edges
-    ) {
+            List<Map<String, Object>> edges) {
         Map<String, Map<String, Object>> nodeMap = nodes.stream()
                 .collect(Collectors.toMap(node -> String.valueOf(node.get("id")), node -> node, (a, b) -> a));
 

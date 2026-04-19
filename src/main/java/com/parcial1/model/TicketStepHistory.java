@@ -24,6 +24,7 @@ public class TicketStepHistory {
 
     private String nodeId;
     private String nodeLabel;
+    private String nodeType;
 
     private String departmentId;
     private String departmentName;
@@ -35,6 +36,7 @@ public class TicketStepHistory {
     private String tramiteTemplateId;
     private String tramiteTemplateName;
 
+    private String decisionResult;
     private Map<String, Object> submittedTramiteData;
 
     private LocalDateTime startedAt;

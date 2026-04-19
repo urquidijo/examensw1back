@@ -5,6 +5,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Document(collection = "workflow_tasks")
@@ -24,6 +25,7 @@ public class WorkflowTask {
     private String workflowId;
     private String nodeId;
     private String nodeLabel;
+    private String nodeType;
 
     private String departmentId;
     private String departmentName;
@@ -34,6 +36,10 @@ public class WorkflowTask {
     private boolean requiresTramite;
     private String tramiteTemplateId;
     private String tramiteTemplateName;
+
+    private String decisionMode;
+    private String decisionQuestion;
+    private List<Map<String, String>> decisionOptions;
 
     private TaskStatus status;
 
