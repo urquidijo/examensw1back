@@ -67,4 +67,11 @@ public class TaskController {
                         file.getContentType() != null ? file.getContentType() : "application/octet-stream")
                 .body(file.getContent());
     }
+
+    @GetMapping("/tickets/{ticketId}/monitor")
+    public ResponseEntity<TicketMonitorResponse> getTicketMonitor(
+            @PathVariable String projectId,
+            @PathVariable String ticketId) {
+        return ResponseEntity.ok(taskService.getTicketMonitor(projectId, ticketId));
+    }
 }

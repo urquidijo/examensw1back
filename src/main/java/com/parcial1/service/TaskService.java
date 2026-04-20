@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import java.time.Duration;
+
 @Service
 @RequiredArgsConstructor
 public class TaskService {
@@ -362,6 +364,9 @@ public class TaskService {
 
     private void finishTicket(Ticket ticket, LocalDateTime now) {
         ticket.setStatus(TicketStatus.COMPLETED);
+        ticket.setCurrentNodeId(null);
+        ticket.setCurrentDepartmentId(null);
+        ticket.setCurrentDepartmentName(null);
         ticket.setUpdatedAt(now);
         ticketRepository.save(ticket);
     }
@@ -855,4 +860,147 @@ public class TaskService {
 
         return null;
     }
+
+    public TicketMonitorResponse getTicketMonitor(String projectId, String ticketId) {
+    User currentUser = getCurrentUser();
+    getMembership(projectId, currentUser.getId());
+
+    Ticket ticket = ticketRepository.findByIdAndProjectId(ticketId, projectId)
+            .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+    List<TicketStepHistory> history = ticketStepHistoryRepository
+            .findByProjectIdAndTicketIdOrderByCompletedAtAsc(projectId, ticketId);
+
+    List<WorkflowTask> activeTasks = workflowTaskRepository
+            .findByProjectIdAndTicketIdAndStatusInOrderByCreatedAtAsc(
+                    projectId,
+                    ticketId,
+                    List.of(TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+            );
+
+    List<TicketMonitorStepResponse> timeline = new ArrayList<>();
+
+    for (TicketStepHistory item : history) {
+        LocalDateTime startedAt = item.getStartedAt();
+        LocalDateTime completedAt = item.getCompletedAt();
+
+        timeline.add(TicketMonitorStepResponse.builder()
+                .kind("COMPLETED")
+                .nodeId(item.getNodeId())
+                .nodeLabel(item.getNodeLabel())
+                .nodeType(item.getNodeType())
+                .departmentId(item.getDepartmentId())
+                .departmentName(item.getDepartmentName())
+                .assignedUserId(item.getAssignedUserId())
+                .assignedUserName(item.getAssignedUserName())
+                .decisionResult(item.getDecisionResult())
+                .startedAt(startedAt)
+                .completedAt(completedAt)
+                .durationMinutes(calculateMinutes(startedAt, completedAt))
+                .parallelGroupId(null)
+                .build());
+    }
+
+    for (WorkflowTask task : activeTasks) {
+        LocalDateTime startedAt = task.getStartedAt() != null ? task.getStartedAt() : task.getCreatedAt();
+
+        timeline.add(TicketMonitorStepResponse.builder()
+                .kind("CURRENT")
+                .nodeId(task.getNodeId())
+                .nodeLabel(task.getNodeLabel())
+                .nodeType(task.getNodeType())
+                .departmentId(task.getDepartmentId())
+                .departmentName(task.getDepartmentName())
+                .assignedUserId(task.getAssignedUserId())
+                .assignedUserName(task.getAssignedUserName())
+                .decisionResult(null)
+                .startedAt(startedAt)
+                .completedAt(null)
+                .durationMinutes(calculateMinutes(startedAt, LocalDateTime.now()))
+                .parallelGroupId(task.getParallelGroupId())
+                .build());
+    }
+
+    timeline.sort(Comparator.comparing(this::getTimelineSortDate));
+
+    LocalDateTime startedAt = timeline.stream()
+            .map(TicketMonitorStepResponse::getStartedAt)
+            .filter(Objects::nonNull)
+            .min(LocalDateTime::compareTo)
+            .orElse(ticket.getCreatedAt());
+
+    LocalDateTime completedAt = ticket.getStatus() == TicketStatus.COMPLETED
+            ? ticket.getUpdatedAt()
+            : null;
+
+    List<String> currentDepartments = activeTasks.stream()
+            .map(WorkflowTask::getDepartmentName)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+
+    List<String> currentNodeIds = activeTasks.stream()
+            .map(WorkflowTask::getNodeId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+
+    TicketMonitorSummaryResponse summary = TicketMonitorSummaryResponse.builder()
+            .startedAt(startedAt)
+            .completedAt(completedAt)
+            .totalDurationMinutes(calculateMinutes(
+                    startedAt,
+                    completedAt != null ? completedAt : LocalDateTime.now()))
+            .currentDepartments(currentDepartments)
+            .currentNodeIds(currentNodeIds)
+            .parallelActive(currentDepartments.size() > 1)
+            .build();
+
+    return TicketMonitorResponse.builder()
+            .ticket(mapTicketResponse(ticket))
+            .summary(summary)
+            .timeline(timeline)
+            .build();
+}
+
+private LocalDateTime getTimelineSortDate(TicketMonitorStepResponse item) {
+    if (item.getStartedAt() != null) {
+        return item.getStartedAt();
+    }
+    if (item.getCompletedAt() != null) {
+        return item.getCompletedAt();
+    }
+    return LocalDateTime.MAX;
+}
+
+private Long calculateMinutes(LocalDateTime start, LocalDateTime end) {
+    if (start == null || end == null) {
+        return null;
+    }
+    return Duration.between(start, end).toMinutes();
+}
+
+private TicketResponse mapTicketResponse(Ticket ticket) {
+    return TicketResponse.builder()
+            .id(ticket.getId())
+            .projectId(ticket.getProjectId())
+            .workflowId(ticket.getWorkflowId())
+            .workflowName(ticket.getWorkflowName())
+            .title(ticket.getTitle())
+            .description(ticket.getDescription())
+            .clientName(ticket.getClientName())
+            .clientPhone(ticket.getClientPhone())
+            .clientEmail(ticket.getClientEmail())
+            .clientReference(ticket.getClientReference())
+            .status(ticket.getStatus())
+            .currentDepartmentId(ticket.getCurrentDepartmentId())
+            .currentDepartmentName(ticket.getCurrentDepartmentName())
+            .currentNodeId(ticket.getCurrentNodeId())
+            .createdBy(ticket.getCreatedBy())
+            .createdAt(ticket.getCreatedAt())
+            .updatedAt(ticket.getUpdatedAt())
+            .metadata(ticket.getMetadata())
+            .uploadedFiles(ticket.getUploadedFiles())
+            .build();
+}
 }

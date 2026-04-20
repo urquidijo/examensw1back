@@ -9,21 +9,24 @@ import java.util.Optional;
 
 public interface WorkflowTaskRepository extends MongoRepository<WorkflowTask, String> {
 
-    List<WorkflowTask> findByProjectIdOrderByCreatedAtDesc(String projectId);
+        List<WorkflowTask> findByProjectIdOrderByCreatedAtDesc(String projectId);
 
-    List<WorkflowTask> findByAssignedUserIdAndStatusInOrderByCreatedAtDesc(
-            String assignedUserId,
-            List<TaskStatus> statuses
-    );
+        List<WorkflowTask> findByAssignedUserIdAndStatusInOrderByCreatedAtDesc(
+                        String assignedUserId,
+                        List<TaskStatus> statuses);
 
-    List<WorkflowTask> findByDepartmentIdOrderByCreatedAtDesc(String departmentId);
+        List<WorkflowTask> findByDepartmentIdOrderByCreatedAtDesc(String departmentId);
 
-    List<WorkflowTask> findByProjectIdAndAssignedUserIdAndDepartmentIdAndStatusInOrderByCreatedAtDesc(
-            String projectId,
-            String assignedUserId,
-            String departmentId,
-            List<TaskStatus> statuses
-    );
+        List<WorkflowTask> findByProjectIdAndAssignedUserIdAndDepartmentIdAndStatusInOrderByCreatedAtDesc(
+                        String projectId,
+                        String assignedUserId,
+                        String departmentId,
+                        List<TaskStatus> statuses);
 
-    Optional<WorkflowTask> findByIdAndProjectId(String id, String projectId);
+        List<WorkflowTask> findByProjectIdAndTicketIdAndStatusInOrderByCreatedAtAsc(
+                        String projectId,
+                        String ticketId,
+                        List<TaskStatus> statuses);
+
+        Optional<WorkflowTask> findByIdAndProjectId(String id, String projectId);
 }

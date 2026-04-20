@@ -12,5 +12,7 @@ public interface TicketStepHistoryRepository extends MongoRepository<TicketStepH
 
     Optional<TicketStepHistory> findByIdAndProjectId(String id, String projectId);
 
+    List<TicketStepHistory> findByProjectIdAndTicketIdOrderByCompletedAtAsc(String projectId, String ticketId);
+
     List<TicketStepHistory> findByProjectIdAndDepartmentIdOrderByCompletedAtDesc(String projectId, String departmentId);
 }
