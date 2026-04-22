@@ -28,6 +28,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
 
+                .requestMatchers("/ws/**").permitAll()
+
                 .requestMatchers(HttpMethod.GET, "/api/node-invites/*").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/node-invites/*/accept").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/node-invites/projects/*/nodes/*/generate").authenticated()
