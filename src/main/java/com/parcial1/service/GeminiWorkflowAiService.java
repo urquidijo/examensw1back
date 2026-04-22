@@ -1,39 +1,43 @@
 package com.parcial1.service;
 
+import static java.util.Map.entry;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.parcial1.dto.ai.WorkflowAiCommandRequest;
-import com.parcial1.dto.ai.WorkflowAiOperation;
-import com.parcial1.dto.ai.WorkflowAiResponse;
+import com.parcial1.dto.ai.WorkflowAiEdge;
+import com.parcial1.dto.ai.WorkflowAiGraphResponse;
+import com.parcial1.dto.ai.WorkflowAiNode;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 @Service
 public class GeminiWorkflowAiService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final String apiKey;
+    private final String model;
 
-    @Value("${gemini.api-key}")
-    private String apiKey;
-
-    @Value("${gemini.model:gemini-2.5-flash-lite}")
-    private String model;
-
-    public GeminiWorkflowAiService(WebClient webClient, ObjectMapper objectMapper) {
+    public GeminiWorkflowAiService(
+        WebClient webClient,
+        ObjectMapper objectMapper,
+        @Value("${gemini.api-key}") String apiKey,
+        @Value("${gemini.model:gemini-2.5-flash-lite}") String model
+    ) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
+        this.apiKey = apiKey;
+        this.model = model;
     }
 
-    public WorkflowAiResponse processCommand(
+    public WorkflowAiGraphResponse processCommand(
         String projectId,
         String workflowId,
         WorkflowAiCommandRequest request
@@ -43,52 +47,17 @@ public class GeminiWorkflowAiService {
         try {
             String systemInstruction = buildSystemInstruction();
             String userPrompt = buildUserPrompt(projectId, workflowId, request);
+            Map<String, Object> payload = buildPayload(systemInstruction, userPrompt);
 
-            Map<String, Object> payload = Map.of(
-                "systemInstruction", Map.of(
-                    "parts", List.of(
-                        Map.of("text", systemInstruction)
-                    )
-                ),
-                "contents", List.of(
-                    Map.of(
-                        "role", "user",
-                        "parts", List.of(
-                            Map.of("text", userPrompt)
-                        )
-                    )
-                ),
-                "generationConfig", Map.of(
-                    "temperature", 0.1,
-                    "maxOutputTokens", 2048,
-                    "responseMimeType", "application/json"
-                )
-            );
-
-            String rawResponse = webClient.post()
-                .uri("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
-                .header("x-goog-api-key", apiKey)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(payload)
-                .retrieve()
-                .onStatus(
-                    status -> status.isError(),
-                    response -> response.bodyToMono(String.class)
-                        .map(body -> new IllegalArgumentException("Gemini error: " + body))
-                )
-                .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(35))
-                .block();
-
+            String rawResponse = callGeminiWithRetry(payload, 3);
             String jsonText = extractJsonText(rawResponse);
+            WorkflowAiGraphResponse parsed = parseGraphResponse(jsonText);
 
-            WorkflowAiResponse parsed = objectMapper.readValue(jsonText, WorkflowAiResponse.class);
-            WorkflowAiResponse normalizedMode = normalizeModeFromRequest(request, parsed);
+            return normalizeGraphResponse(request, parsed);
 
-            return normalizeOperations(normalizedMode);
-
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            e.printStackTrace();
             throw new RuntimeException("Error procesando comando con Gemini: " + e.getMessage(), e);
         }
     }
@@ -97,41 +66,224 @@ public class GeminiWorkflowAiService {
         if (request == null) {
             throw new IllegalArgumentException("El request no puede ser nulo");
         }
+
         if (request.prompt() == null || request.prompt().trim().isEmpty()) {
             throw new IllegalArgumentException("El prompt es obligatorio");
         }
+
         if (request.workflow() == null) {
             throw new IllegalArgumentException("El workflow actual es obligatorio");
         }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("No se encontró la API key de Gemini. Revisa GEMINI_API_KEY.");
+        }
+    }
+
+    private Map<String, Object> buildPayload(String systemInstruction, String userPrompt) {
+        return Map.ofEntries(
+            entry("systemInstruction", Map.of(
+                "parts", List.of(Map.of("text", systemInstruction))
+            )),
+            entry("contents", List.of(
+                Map.of(
+                    "role", "user",
+                    "parts", List.of(Map.of("text", userPrompt))
+                )
+            )),
+            entry("generationConfig", Map.ofEntries(
+                entry("temperature", 0.1),
+                entry("maxOutputTokens", 3072),
+                entry("responseMimeType", "application/json"),
+                entry("responseSchema", buildResponseSchema())
+            ))
+        );
+    }
+
+    private Map<String, Object> buildResponseSchema() {
+        return Map.ofEntries(
+            entry("type", "OBJECT"),
+            entry("required", List.of("mode", "summary", "nodes", "edges")),
+            entry("properties", Map.ofEntries(
+                entry("mode", Map.of(
+                    "type", "STRING",
+                    "enum", List.of("replace", "patch")
+                )),
+                entry("summary", Map.of(
+                    "type", "STRING"
+                )),
+                entry("nodes", Map.ofEntries(
+                    entry("type", "ARRAY"),
+                    entry("items", buildNodeSchema())
+                )),
+                entry("edges", Map.ofEntries(
+                    entry("type", "ARRAY"),
+                    entry("items", buildEdgeSchema())
+                ))
+            ))
+        );
+    }
+
+    private Map<String, Object> buildNodeSchema() {
+        return Map.ofEntries(
+            entry("type", "OBJECT"),
+            entry("required", List.of("id", "shape", "x", "y", "label", "data")),
+            entry("properties", Map.ofEntries(
+                entry("id", Map.of("type", "STRING")),
+                entry("shape", Map.of(
+                    "type", "STRING",
+                    "enum", List.of(
+                        "workflow-start",
+                        "workflow-task",
+                        "workflow-decision",
+                        "workflow-fork",
+                        "workflow-join",
+                        "workflow-end"
+                    )
+                )),
+                entry("x", Map.of("type", "INTEGER")),
+                entry("y", Map.of("type", "INTEGER")),
+                entry("label", Map.of("type", "STRING")),
+                entry("data", buildNodeDataSchema())
+            ))
+        );
+    }
+
+    private Map<String, Object> buildNodeDataSchema() {
+        return Map.ofEntries(
+            entry("type", "OBJECT"),
+            entry("required", List.of("label", "nodeType")),
+            entry("properties", Map.ofEntries(
+                entry("label", Map.of("type", "STRING")),
+                entry("nodeType", Map.of(
+                    "type", "STRING",
+                    "enum", List.of("start", "task", "decision", "fork", "join", "end")
+                )),
+                entry("departmentId", Map.of("type", "STRING")),
+                entry("departmentName", Map.of("type", "STRING")),
+                entry("instructions", Map.of("type", "STRING")),
+                entry("aiAlias", Map.of("type", "STRING")),
+                entry("decisionMode", Map.of("type", "STRING")),
+                entry("decisionQuestion", Map.of("type", "STRING")),
+                entry("decisionOptions", Map.ofEntries(
+                    entry("type", "ARRAY"),
+                    entry("items", Map.ofEntries(
+                        entry("type", "OBJECT"),
+                        entry("required", List.of("value", "label")),
+                        entry("properties", Map.ofEntries(
+                            entry("value", Map.of("type", "STRING")),
+                            entry("label", Map.of("type", "STRING"))
+                        ))
+                    ))
+                ))
+            ))
+        );
+    }
+
+    private Map<String, Object> buildEdgeSchema() {
+        return Map.ofEntries(
+            entry("type", "OBJECT"),
+            entry("required", List.of("id", "shape", "source", "target")),
+            entry("properties", Map.ofEntries(
+                entry("id", Map.of("type", "STRING")),
+                entry("shape", Map.of(
+                    "type", "STRING",
+                    "enum", List.of("edge")
+                )),
+                entry("source", buildEdgeEndpointSchema()),
+                entry("target", buildEdgeEndpointSchema()),
+                entry("attrs", Map.of("type", "OBJECT"))
+            ))
+        );
+    }
+
+    private Map<String, Object> buildEdgeEndpointSchema() {
+        return Map.ofEntries(
+            entry("type", "OBJECT"),
+            entry("required", List.of("cell", "port")),
+            entry("properties", Map.ofEntries(
+                entry("cell", Map.of("type", "STRING")),
+                entry("port", Map.of("type", "STRING"))
+            ))
+        );
+    }
+
+    private String callGeminiWithRetry(Map<String, Object> payload, int maxAttempts) {
+        long waitMs = 1500;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return callGemini(payload);
+            } catch (GeminiApiException e) {
+                if (e.statusCode == 503 && attempt < maxAttempts) {
+                    sleep(waitMs);
+                    waitMs *= 2;
+                    continue;
+                }
+
+                if (e.statusCode == 403) {
+                    throw new IllegalStateException(
+                        "Gemini rechazó la solicitud (403). Revisa tu API key. Detalle: " + preview(e.responseBody),
+                        e
+                    );
+                }
+
+                if (e.statusCode == 503) {
+                    throw new IllegalStateException(
+                        "Gemini está temporalmente saturado (503). Intenta nuevamente. Detalle: " + preview(e.responseBody),
+                        e
+                    );
+                }
+
+                throw new IllegalStateException(
+                    "Gemini error HTTP " + e.statusCode + ". Detalle: " + preview(e.responseBody),
+                    e
+                );
+            }
+        }
+
+        throw new IllegalStateException("No se pudo obtener una respuesta válida de Gemini.");
+    }
+
+    private String callGemini(Map<String, Object> payload) {
+        return webClient.post()
+            .uri("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
+            .header("x-goog-api-key", apiKey)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(payload)
+            .exchangeToMono(response ->
+                response.bodyToMono(String.class)
+                    .defaultIfEmpty("")
+                    .flatMap(body -> {
+                        if (response.statusCode().is2xxSuccessful()) {
+                            return Mono.just(body);
+                        }
+                        return Mono.error(new GeminiApiException(response.statusCode().value(), body));
+                    })
+            )
+            .timeout(Duration.ofSeconds(40))
+            .block();
     }
 
     private String buildSystemInstruction() {
         return """
-            Convierte instrucciones en español a JSON para editar workflows.
+            Convierte instrucciones en español a un JSON de workflow visual.
 
-            Debes responder SOLO con un objeto JSON válido:
-            {
-              "mode": "replace" | "patch",
-              "summary": "texto corto",
-              "operations": []
-            }
+            Responde SOLO JSON válido.
+            No uses markdown.
+            No uses ```json.
+            No agregues explicaciones fuera del JSON.
 
-            Operaciones permitidas:
-            createNode, renameNode, updateNode, deleteNode, connectNodes, disconnectNodes
-
-            Tipos de nodo:
-            start, task, decision, fork, join, end
-
-            REGLAS OBLIGATORIAS:
-            - Cada createNode debe incluir nodeType, alias y label.
-            - Si el usuario pide crear un workflow nuevo, nuevo flujo, desde cero o reemplazar el actual, usa mode="replace".
-            - Si el usuario pide agregar, aumentar, modificar, renombrar, conectar, eliminar o quitar, usa mode="patch".
-            - Si creas más de un nodo, SIEMPRE debes agregar connectNodes.
-            - No dejes nodos aislados.
-            - Si el flujo es lineal, conecta todos los nodos consecutivamente.
-            - Si hay una decisión, conecta la decisión con cada rama.
-            - Si un campo no aplica, usa null.
-            - No agregues explicación fuera del JSON.
+            El JSON debe respetar exactamente el schema enviado.
+            Reglas:
+            - Usa mode="replace" si el usuario quiere crear desde cero o reemplazar todo.
+            - Usa mode="patch" si el usuario quiere modificar el flujo actual.
+            - Si hay más de un nodo, crea edges coherentes.
+            - No dejes nodos sueltos.
+            - Para flujo lineal simple, conecta nodos consecutivos.
+            - Si hay decisión, conecta la decisión hacia cada rama.
+            - Usa ids cortos y estables.
+            - summary debe ser una frase corta.
             """;
     }
 
@@ -148,17 +300,14 @@ public class GeminiWorkflowAiService {
         String resolvedMode = resolveMode(request);
 
         return """
+            projectId=%s
             workflowId=%s
             resolvedMode=%s
-            workflow=%s
+            currentWorkflow=%s
             departments=%s
             command=%s
-
-            Interpretación obligatoria:
-            - Si resolvedMode=replace, crea un workflow nuevo y reemplaza el actual.
-            - Si resolvedMode=patch, modifica el workflow actual sin reemplazarlo completo.
-            - Si creas varios nodos, incluye connectNodes.
             """.formatted(
+            projectId,
             workflowId,
             resolvedMode,
             workflowJson,
@@ -167,222 +316,69 @@ public class GeminiWorkflowAiService {
         );
     }
 
-    private WorkflowAiResponse normalizeModeFromRequest(
-        WorkflowAiCommandRequest request,
-        WorkflowAiResponse response
-    ) {
-        String resolvedMode = resolveMode(request);
-
-        if (response == null) {
-            return null;
-        }
-
-        if (!resolvedMode.equals(response.mode())) {
-            return new WorkflowAiResponse(
-                resolvedMode,
-                response.summary(),
-                response.operations()
-            );
-        }
-
-        return response;
-    }
-
-    private WorkflowAiResponse normalizeOperations(WorkflowAiResponse response) {
-        if (response == null) {
-            return null;
-        }
-
-        List<WorkflowAiOperation> originalOps =
-            response.operations() != null ? response.operations() : List.of();
-
-        List<WorkflowAiOperation> normalizedOps = new ArrayList<>();
-        List<String> createdAliasesInOrder = new ArrayList<>();
-        Set<String> existingConnections = new HashSet<>();
-
-        int createCount = 1;
-        boolean hasConnectOps = false;
-
-        for (WorkflowAiOperation op : originalOps) {
-            if (op == null || op.type() == null) {
-                continue;
-            }
-
-            switch (op.type()) {
-                case "createNode" -> {
-                    String nodeType = nonBlank(op.nodeType()) ? op.nodeType() : "task";
-                    String alias = nonBlank(op.alias()) ? op.alias() : "nodo" + createCount++;
-                    String label = nonBlank(op.label()) ? op.label() : getDefaultLabel(nodeType);
-
-                    List<Map<String, String>> decisionOptions = op.decisionOptions();
-                    String decisionQuestion = op.decisionQuestion();
-
-                    if ("decision".equals(nodeType)) {
-                        if (!nonBlank(decisionQuestion)) {
-                            decisionQuestion = "Seleccione una opción";
-                        }
-                        if (decisionOptions == null || decisionOptions.size() < 2) {
-                            decisionOptions = List.of(
-                                Map.of("value", "SI", "label", "Sí"),
-                                Map.of("value", "NO", "label", "No")
-                            );
-                        }
-                    } else {
-                        decisionQuestion = null;
-                        decisionOptions = null;
-                    }
-
-                    normalizedOps.add(new WorkflowAiOperation(
-                        "createNode",
-                        alias,
-                        null,
-                        null,
-                        nodeType,
-                        label,
-                        null,
-                        null,
-                        op.departmentName(),
-                        op.instructions(),
-                        decisionQuestion,
-                        decisionOptions,
-                        null,
-                        null,
-                        op.x(),
-                        op.y()
-                    ));
-
-                    createdAliasesInOrder.add(alias);
-                }
-
-                case "connectNodes" -> {
-                    hasConnectOps = true;
-
-                    String source = op.source();
-                    String target = op.target();
-
-                    if (nonBlank(source) && nonBlank(target)) {
-                        String key = source.trim().toLowerCase() + "->" + target.trim().toLowerCase();
-                        existingConnections.add(key);
-
-                        normalizedOps.add(new WorkflowAiOperation(
-                            "connectNodes",
-                            null,
-                            null,
-                            source,
-                            null,
-                            null,
-                            null,
-                            null,
-                            null,
-                            null,
-                            null,
-                            null,
-                            op.conditionValue(),
-                            op.conditionLabel(),
-                            null,
-                            null
-                        ));
-                    }
-                }
-
-                case "renameNode", "updateNode", "deleteNode", "disconnectNodes" -> {
-                    normalizedOps.add(op);
-                }
-
-                default -> {
-                    // Ignora tipos desconocidos
-                }
-            }
-        }
-
-        if ("replace".equals(response.mode()) && createdAliasesInOrder.size() > 1 && !hasConnectOps) {
-            for (int i = 0; i < createdAliasesInOrder.size() - 1; i++) {
-                String source = createdAliasesInOrder.get(i);
-                String target = createdAliasesInOrder.get(i + 1);
-                String key = source.trim().toLowerCase() + "->" + target.trim().toLowerCase();
-
-                if (!existingConnections.contains(key)) {
-                    normalizedOps.add(new WorkflowAiOperation(
-                        "connectNodes",
-                        null,
-                        null,
-                        source,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null
-                    ));
-                    existingConnections.add(key);
-                }
-            }
-        }
-
-        String summary = nonBlank(response.summary())
-            ? response.summary()
-            : ("replace".equals(response.mode()) ? "Workflow generado con IA" : "Cambios generados con IA");
-
-        return new WorkflowAiResponse(
-            response.mode(),
-            summary,
-            normalizedOps
-        );
-    }
-
-    private String getDefaultLabel(String nodeType) {
-        return switch (nodeType) {
-            case "start" -> "Inicio";
-            case "task" -> "Actividad";
-            case "decision" -> "Decisión";
-            case "fork" -> "Fork";
-            case "join" -> "Join";
-            case "end" -> "Fin";
-            default -> "Actividad";
-        };
-    }
-
-    private boolean nonBlank(String value) {
-        return value != null && !value.trim().isEmpty();
-    }
-
     private String extractJsonText(String rawResponse) throws Exception {
         JsonNode root = objectMapper.readTree(rawResponse);
 
         JsonNode candidates = root.path("candidates");
         if (!candidates.isArray() || candidates.isEmpty()) {
             String promptFeedback = root.path("promptFeedback").toString();
-            throw new RuntimeException("Gemini no devolvió candidatos. promptFeedback=" + promptFeedback);
+            throw new IllegalStateException("Gemini no devolvió candidatos. promptFeedback=" + promptFeedback);
         }
 
-        JsonNode firstCandidate = candidates.get(0);
-
-        JsonNode finishReason = firstCandidate.path("finishReason");
-        if (finishReason.isTextual() && "SAFETY".equalsIgnoreCase(finishReason.asText())) {
-            throw new RuntimeException("Gemini bloqueó la respuesta por safety");
-        }
-
-        JsonNode parts = firstCandidate.path("content").path("parts");
+        JsonNode parts = candidates.get(0).path("content").path("parts");
         if (!parts.isArray() || parts.isEmpty()) {
-            throw new RuntimeException("Gemini no devolvió texto utilizable");
+            throw new IllegalStateException("Gemini no devolvió partes de texto utilizables");
         }
 
-        String text = parts.get(0).path("text").asText();
-        if (text == null || text.trim().isEmpty()) {
-            throw new RuntimeException("Gemini devolvió una respuesta vacía");
+        StringBuilder textBuilder = new StringBuilder();
+        for (JsonNode part : parts) {
+            String text = part.path("text").asText("");
+            if (!text.isBlank()) {
+                textBuilder.append(text);
+            }
+        }
+
+        String text = textBuilder.toString().trim();
+        if (text.isEmpty()) {
+            throw new IllegalStateException("Gemini devolvió una respuesta vacía");
         }
 
         return sanitizeJson(text);
     }
 
+    private WorkflowAiGraphResponse parseGraphResponse(String jsonText) {
+        String cleaned = sanitizeJson(jsonText);
+
+        try {
+            JsonNode root = objectMapper.readTree(cleaned);
+
+            if (!root.isObject()) {
+                throw new IllegalStateException("Gemini no devolvió un objeto JSON válido");
+            }
+
+            JsonNode nodesNode = root.path("nodes");
+            JsonNode edgesNode = root.path("edges");
+
+            if (!nodesNode.isArray()) {
+                throw new IllegalStateException("El campo nodes no es un array válido");
+            }
+
+            if (!edgesNode.isArray()) {
+                throw new IllegalStateException("El campo edges no es un array válido");
+            }
+
+            return objectMapper.treeToValue(root, WorkflowAiGraphResponse.class);
+
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                "Gemini devolvió JSON inválido o incompleto. Respuesta: " + preview(cleaned),
+                e
+            );
+        }
+    }
+
     private String sanitizeJson(String text) {
-        String clean = text.trim();
+        String clean = text == null ? "" : text.trim();
 
         if (clean.startsWith("```json")) {
             clean = clean.substring(7).trim();
@@ -394,14 +390,52 @@ public class GeminiWorkflowAiService {
             clean = clean.substring(0, clean.length() - 3).trim();
         }
 
-        return clean;
+        int firstBrace = clean.indexOf('{');
+        int lastBrace = clean.lastIndexOf('}');
+
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            clean = clean.substring(firstBrace, lastBrace + 1);
+        }
+
+        return clean.trim();
+    }
+
+    private WorkflowAiGraphResponse normalizeGraphResponse(
+        WorkflowAiCommandRequest request,
+        WorkflowAiGraphResponse response
+    ) {
+        String resolvedMode = resolveMode(request);
+
+        if (response == null) {
+            return new WorkflowAiGraphResponse(
+                resolvedMode,
+                "No se generó respuesta",
+                List.of(),
+                List.of()
+            );
+        }
+
+        String summary = nonBlank(response.summary())
+            ? response.summary()
+            : ("replace".equals(resolvedMode)
+                ? "Workflow generado con IA"
+                : "Cambios generados con IA");
+
+        List<WorkflowAiNode> nodes = response.nodes() == null ? List.of() : response.nodes();
+        List<WorkflowAiEdge> edges = response.edges() == null ? List.of() : response.edges();
+
+        return new WorkflowAiGraphResponse(
+            resolvedMode,
+            summary,
+            nodes,
+            edges
+        );
     }
 
     private String resolveMode(WorkflowAiCommandRequest request) {
         if (request.forcedMode() != null && !request.forcedMode().isBlank()) {
-            return request.forcedMode();
+            return request.forcedMode().trim().toLowerCase();
         }
-
         return inferIntentMode(request.prompt());
     }
 
@@ -417,23 +451,15 @@ public class GeminiWorkflowAiService {
             p.contains("crear un workflow") ||
             p.contains("crea un flujo") ||
             p.contains("crear un flujo") ||
-            p.contains("haz un workflow") ||
-            p.contains("hazme un workflow") ||
-            p.contains("genera un workflow") ||
             p.contains("nuevo workflow") ||
             p.contains("nuevo flujo") ||
             p.contains("desde cero") ||
-            p.contains("comienza de cero") ||
-            p.contains("empieza de cero") ||
-            p.contains("crea una politica de negocio") ||
-            p.contains("genera una politica de negocio") ||
             p.contains("reemplaza todo");
 
         boolean patchIntent =
             p.contains("agrega") ||
             p.contains("añade") ||
             p.contains("aumenta") ||
-            p.contains("inserta") ||
             p.contains("conecta") ||
             p.contains("renombra") ||
             p.contains("cambia") ||
@@ -448,5 +474,40 @@ public class GeminiWorkflowAiService {
         }
 
         return "patch";
+    }
+
+    private boolean nonBlank(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private void sleep(long waitMs) {
+        try {
+            Thread.sleep(waitMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Proceso interrumpido durante el retry de Gemini", e);
+        }
+    }
+
+    private String preview(String text) {
+        if (text == null || text.isBlank()) {
+            return "(sin detalle)";
+        }
+
+        String normalized = text.replace("\n", " ").replace("\r", " ").trim();
+        return normalized.length() > 400
+            ? normalized.substring(0, 400) + "..."
+            : normalized;
+    }
+
+    private static class GeminiApiException extends RuntimeException {
+        private final int statusCode;
+        private final String responseBody;
+
+        private GeminiApiException(int statusCode, String responseBody) {
+            super("Gemini error HTTP " + statusCode);
+            this.statusCode = statusCode;
+            this.responseBody = responseBody;
+        }
     }
 }
