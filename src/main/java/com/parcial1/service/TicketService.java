@@ -18,6 +18,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TicketService {
@@ -96,8 +99,6 @@ public class TicketService {
                 .build();
     }
 
-    
-
     public List<TicketResponse> getTickets(String projectId) {
         User currentUser = getCurrentUser();
         getMembership(projectId, currentUser.getId());
@@ -163,7 +164,8 @@ public class TicketService {
                             currentUser.getId());
                     uploadedFiles.add(storedFile);
                 } catch (Exception e) {
-                    throw new RuntimeException("No se pudo subir uno de los archivos del ticket");
+                    log.error("ERROR SUBIENDO ARCHIVO DEL TICKET A S3", e);
+                    throw new RuntimeException("No se pudo subir uno de los archivos del ticket: " + e.getMessage(), e);
                 }
             }
         }
