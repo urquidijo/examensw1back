@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +26,7 @@ public class ProjectInvitationService {
     private final ProjectMemberRepository projectMemberRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final FirebasePushService firebasePushService;
 
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -138,8 +140,7 @@ public class ProjectInvitationService {
                 .existsByProjectIdAndInvitedUserIdAndStatus(
                         projectId,
                         invitedUser.getId(),
-                        InvitationStatus.PENDIENTE
-                );
+                        InvitationStatus.PENDIENTE);
 
         if (pendingInvitationExists) {
             throw new RuntimeException("Ya existe una invitación pendiente para este usuario");
@@ -156,7 +157,20 @@ public class ProjectInvitationService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        projectInvitationRepository.save(invitation);
+        ProjectInvitation savedInvitation = projectInvitationRepository.save(invitation);
+
+        System.out.println("INVITACION GUARDADA: " + savedInvitation.getId());
+        System.out.println("TOKEN INVITADO: " + invitedUser.getFcmToken());
+
+        firebasePushService.sendPush(
+                invitedUser.getFcmToken(),
+                "Nueva invitación",
+                "Te invitaron al proyecto " + project.getName(),
+                Map.of(
+                        "type", "PROJECT_INVITATION",
+                        "invitationId", savedInvitation.getId(),
+                        "projectId", project.getId(),
+                        "projectName", project.getName()));
 
         return new MessageResponse("Invitación enviada correctamente");
     }
@@ -167,8 +181,7 @@ public class ProjectInvitationService {
         return projectInvitationRepository
                 .findByInvitedUserIdAndStatusOrderByCreatedAtDesc(
                         currentUser.getId(),
-                        InvitationStatus.PENDIENTE
-                )
+                        InvitationStatus.PENDIENTE)
                 .stream()
                 .map(invitation -> {
                     Project project = projectRepository.findById(invitation.getProjectId()).orElse(null);

@@ -4,6 +4,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+src/main/resources/firebase-service-account.json
+firebase-service-account.json
+
 .env
 
 ### STS ###

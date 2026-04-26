@@ -18,6 +18,7 @@ public class User {
     private String name;
     private String email;
     private String password;
+    private String fcmToken;
 
     @Builder.Default
     private Role role = Role.USER;
