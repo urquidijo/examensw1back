@@ -243,6 +243,80 @@ public class TaskService {
                 .toList();
     }
 
+    public WorkflowTaskResponse rejectTask(String projectId, String taskId, RejectTaskRequest request) {
+    User currentUser = getCurrentUser();
+    getMembership(projectId, currentUser.getId());
+
+    WorkflowTask task = workflowTaskRepository.findByIdAndProjectId(taskId, projectId)
+            .orElseThrow(() -> new RuntimeException("Tarea no encontrada"));
+
+    if (task.getStatus() == TaskStatus.DONE || task.getStatus() == TaskStatus.REJECTED) {
+        throw new RuntimeException("Esta tarea ya fue finalizada");
+    }
+
+    Ticket ticket = ticketRepository.findByIdAndProjectId(task.getTicketId(), projectId)
+            .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+    LocalDateTime now = LocalDateTime.now();
+
+    task.setStatus(TaskStatus.REJECTED);
+
+    if (task.getStartedAt() == null) {
+        task.setStartedAt(task.getCreatedAt() != null ? task.getCreatedAt() : now);
+    }
+
+    task.setCompletedAt(now);
+    workflowTaskRepository.save(task);
+
+    List<WorkflowTask> activeTasks = workflowTaskRepository
+            .findByProjectIdAndTicketIdAndStatusInOrderByCreatedAtAsc(
+                    projectId,
+                    ticket.getId(),
+                    List.of(TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+            );
+
+    for (WorkflowTask activeTask : activeTasks) {
+        activeTask.setStatus(TaskStatus.REJECTED);
+
+        if (activeTask.getStartedAt() == null) {
+            activeTask.setStartedAt(activeTask.getCreatedAt() != null ? activeTask.getCreatedAt() : now);
+        }
+
+        activeTask.setCompletedAt(now);
+        workflowTaskRepository.save(activeTask);
+    }
+
+    ticket.setStatus(TicketStatus.REJECTED);
+    ticket.setCurrentNodeId(null);
+    ticket.setCurrentDepartmentId(null);
+    ticket.setCurrentDepartmentName(null);
+    ticket.setCurrentDepartmentEnteredAt(null);
+    ticket.setUpdatedAt(now);
+
+    Map<String, Object> metadata = ticket.getMetadata();
+
+    if (metadata == null) {
+        metadata = new java.util.HashMap<>();
+    } else {
+        metadata = new java.util.HashMap<>(metadata);
+    }
+
+    metadata.put("rejectedAt", now.toString());
+    metadata.put("rejectedBy", currentUser.getId());
+    metadata.put(
+            "rejectionReason",
+            request != null && request.getReason() != null && !request.getReason().isBlank()
+                    ? request.getReason()
+                    : "Tarea rechazada"
+    );
+
+    ticket.setMetadata(metadata);
+
+    ticketRepository.save(ticket);
+
+    return mapTask(task);
+}
+
     public WorkflowTaskResponse completeTask(
             String projectId,
             String taskId,

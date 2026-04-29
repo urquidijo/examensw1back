@@ -38,6 +38,14 @@ public class TaskController {
         return ResponseEntity.ok(taskService.getTaskDetail(projectId, taskId));
     }
 
+    @PostMapping("/tasks/{taskId}/reject")
+    public ResponseEntity<WorkflowTaskResponse> rejectTask(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @RequestBody(required = false) RejectTaskRequest request) {
+        return ResponseEntity.ok(taskService.rejectTask(projectId, taskId, request));
+    }
+
     @PostMapping(value = "/tasks/{taskId}/complete", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<WorkflowTaskResponse> completeTask(
             @PathVariable String projectId,
