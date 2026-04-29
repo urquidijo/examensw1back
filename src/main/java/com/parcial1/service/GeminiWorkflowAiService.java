@@ -26,11 +26,10 @@ public class GeminiWorkflowAiService {
     private final String model;
 
     public GeminiWorkflowAiService(
-        WebClient webClient,
-        ObjectMapper objectMapper,
-        @Value("${gemini.api-key}") String apiKey,
-        @Value("${gemini.model:gemini-2.5-flash-lite}") String model
-    ) {
+            WebClient webClient,
+            ObjectMapper objectMapper,
+            @Value("${gemini.api-key}") String apiKey,
+            @Value("${gemini.model:gemini-2.5-flash-lite}") String model) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
         this.apiKey = apiKey;
@@ -38,10 +37,9 @@ public class GeminiWorkflowAiService {
     }
 
     public WorkflowAiGraphResponse processCommand(
-        String projectId,
-        String workflowId,
-        WorkflowAiCommandRequest request
-    ) {
+            String projectId,
+            String workflowId,
+            WorkflowAiCommandRequest request) {
         validateRequest(request);
 
         try {
@@ -82,130 +80,104 @@ public class GeminiWorkflowAiService {
 
     private Map<String, Object> buildPayload(String systemInstruction, String userPrompt) {
         return Map.ofEntries(
-            entry("systemInstruction", Map.of(
-                "parts", List.of(Map.of("text", systemInstruction))
-            )),
-            entry("contents", List.of(
-                Map.of(
-                    "role", "user",
-                    "parts", List.of(Map.of("text", userPrompt))
-                )
-            )),
-            entry("generationConfig", Map.ofEntries(
-                entry("temperature", 0.1),
-                entry("maxOutputTokens", 3072),
-                entry("responseMimeType", "application/json"),
-                entry("responseSchema", buildResponseSchema())
-            ))
-        );
+                entry("systemInstruction", Map.of(
+                        "parts", List.of(Map.of("text", systemInstruction)))),
+                entry("contents", List.of(
+                        Map.of(
+                                "role", "user",
+                                "parts", List.of(Map.of("text", userPrompt))))),
+                entry("generationConfig", Map.ofEntries(
+                        entry("temperature", 0.1),
+                        entry("maxOutputTokens", 3072),
+                        entry("responseMimeType", "application/json"),
+                        entry("responseSchema", buildResponseSchema()))));
     }
 
     private Map<String, Object> buildResponseSchema() {
         return Map.ofEntries(
-            entry("type", "OBJECT"),
-            entry("required", List.of("mode", "summary", "nodes", "edges")),
-            entry("properties", Map.ofEntries(
-                entry("mode", Map.of(
-                    "type", "STRING",
-                    "enum", List.of("replace", "patch")
-                )),
-                entry("summary", Map.of(
-                    "type", "STRING"
-                )),
-                entry("nodes", Map.ofEntries(
-                    entry("type", "ARRAY"),
-                    entry("items", buildNodeSchema())
-                )),
-                entry("edges", Map.ofEntries(
-                    entry("type", "ARRAY"),
-                    entry("items", buildEdgeSchema())
-                ))
-            ))
-        );
+                entry("type", "OBJECT"),
+                entry("required", List.of("mode", "summary", "nodes", "edges")),
+                entry("properties", Map.ofEntries(
+                        entry("mode", Map.of(
+                                "type", "STRING",
+                                "enum", List.of("replace", "patch"))),
+                        entry("summary", Map.of(
+                                "type", "STRING")),
+                        entry("nodes", Map.ofEntries(
+                                entry("type", "ARRAY"),
+                                entry("items", buildNodeSchema()))),
+                        entry("edges", Map.ofEntries(
+                                entry("type", "ARRAY"),
+                                entry("items", buildEdgeSchema()))))));
     }
 
     private Map<String, Object> buildNodeSchema() {
         return Map.ofEntries(
-            entry("type", "OBJECT"),
-            entry("required", List.of("id", "shape", "x", "y", "label", "data")),
-            entry("properties", Map.ofEntries(
-                entry("id", Map.of("type", "STRING")),
-                entry("shape", Map.of(
-                    "type", "STRING",
-                    "enum", List.of(
-                        "workflow-start",
-                        "workflow-task",
-                        "workflow-decision",
-                        "workflow-fork",
-                        "workflow-join",
-                        "workflow-end"
-                    )
-                )),
-                entry("x", Map.of("type", "INTEGER")),
-                entry("y", Map.of("type", "INTEGER")),
-                entry("label", Map.of("type", "STRING")),
-                entry("data", buildNodeDataSchema())
-            ))
-        );
+                entry("type", "OBJECT"),
+                entry("required", List.of("id", "shape", "x", "y", "label", "data")),
+                entry("properties", Map.ofEntries(
+                        entry("id", Map.of("type", "STRING")),
+                        entry("shape", Map.of(
+                                "type", "STRING",
+                                "enum", List.of(
+                                        "workflow-start",
+                                        "workflow-task",
+                                        "workflow-decision",
+                                        "workflow-fork",
+                                        "workflow-join",
+                                        "workflow-end"))),
+                        entry("x", Map.of("type", "INTEGER")),
+                        entry("y", Map.of("type", "INTEGER")),
+                        entry("label", Map.of("type", "STRING")),
+                        entry("data", buildNodeDataSchema()))));
     }
 
     private Map<String, Object> buildNodeDataSchema() {
         return Map.ofEntries(
-            entry("type", "OBJECT"),
-            entry("required", List.of("label", "nodeType")),
-            entry("properties", Map.ofEntries(
-                entry("label", Map.of("type", "STRING")),
-                entry("nodeType", Map.of(
-                    "type", "STRING",
-                    "enum", List.of("start", "task", "decision", "fork", "join", "end")
-                )),
-                entry("departmentId", Map.of("type", "STRING")),
-                entry("departmentName", Map.of("type", "STRING")),
-                entry("instructions", Map.of("type", "STRING")),
-                entry("aiAlias", Map.of("type", "STRING")),
-                entry("decisionMode", Map.of("type", "STRING")),
-                entry("decisionQuestion", Map.of("type", "STRING")),
-                entry("decisionOptions", Map.ofEntries(
-                    entry("type", "ARRAY"),
-                    entry("items", Map.ofEntries(
-                        entry("type", "OBJECT"),
-                        entry("required", List.of("value", "label")),
-                        entry("properties", Map.ofEntries(
-                            entry("value", Map.of("type", "STRING")),
-                            entry("label", Map.of("type", "STRING"))
-                        ))
-                    ))
-                ))
-            ))
-        );
+                entry("type", "OBJECT"),
+                entry("required", List.of("label", "nodeType")),
+                entry("properties", Map.ofEntries(
+                        entry("label", Map.of("type", "STRING")),
+                        entry("nodeType", Map.of(
+                                "type", "STRING",
+                                "enum", List.of("start", "task", "decision", "fork", "join", "end"))),
+                        entry("departmentId", Map.of("type", "STRING")),
+                        entry("departmentName", Map.of("type", "STRING")),
+                        entry("instructions", Map.of("type", "STRING")),
+                        entry("aiAlias", Map.of("type", "STRING")),
+                        entry("decisionMode", Map.of("type", "STRING")),
+                        entry("decisionQuestion", Map.of("type", "STRING")),
+                        entry("decisionOptions", Map.ofEntries(
+                                entry("type", "ARRAY"),
+                                entry("items", Map.ofEntries(
+                                        entry("type", "OBJECT"),
+                                        entry("required", List.of("value", "label")),
+                                        entry("properties", Map.ofEntries(
+                                                entry("value", Map.of("type", "STRING")),
+                                                entry("label", Map.of("type", "STRING")))))))))));
     }
 
     private Map<String, Object> buildEdgeSchema() {
         return Map.ofEntries(
-            entry("type", "OBJECT"),
-            entry("required", List.of("id", "shape", "source", "target")),
-            entry("properties", Map.ofEntries(
-                entry("id", Map.of("type", "STRING")),
-                entry("shape", Map.of(
-                    "type", "STRING",
-                    "enum", List.of("edge")
-                )),
-                entry("source", buildEdgeEndpointSchema()),
-                entry("target", buildEdgeEndpointSchema()),
-                entry("attrs", Map.of("type", "OBJECT"))
-            ))
-        );
+                entry("type", "OBJECT"),
+                entry("required", List.of("id", "shape", "source", "target")),
+                entry("properties", Map.ofEntries(
+                        entry("id", Map.of("type", "STRING")),
+                        entry("shape", Map.of(
+                                "type", "STRING",
+                                "enum", List.of("edge"))),
+                        entry("source", buildEdgeEndpointSchema()),
+                        entry("target", buildEdgeEndpointSchema()),
+                        entry("attrs", Map.of("type", "OBJECT")))));
     }
 
     private Map<String, Object> buildEdgeEndpointSchema() {
         return Map.ofEntries(
-            entry("type", "OBJECT"),
-            entry("required", List.of("cell", "port")),
-            entry("properties", Map.ofEntries(
-                entry("cell", Map.of("type", "STRING")),
-                entry("port", Map.of("type", "STRING"))
-            ))
-        );
+                entry("type", "OBJECT"),
+                entry("required", List.of("cell", "port")),
+                entry("properties", Map.ofEntries(
+                        entry("cell", Map.of("type", "STRING")),
+                        entry("port", Map.of("type", "STRING")))));
     }
 
     private String callGeminiWithRetry(Map<String, Object> payload, int maxAttempts) {
@@ -223,22 +195,20 @@ public class GeminiWorkflowAiService {
 
                 if (e.statusCode == 403) {
                     throw new IllegalStateException(
-                        "Gemini rechazó la solicitud (403). Revisa tu API key. Detalle: " + preview(e.responseBody),
-                        e
-                    );
+                            "Gemini rechazó la solicitud (403). Revisa tu API key. Detalle: " + preview(e.responseBody),
+                            e);
                 }
 
                 if (e.statusCode == 503) {
                     throw new IllegalStateException(
-                        "Gemini está temporalmente saturado (503). Intenta nuevamente. Detalle: " + preview(e.responseBody),
-                        e
-                    );
+                            "Gemini está temporalmente saturado (503). Intenta nuevamente. Detalle: "
+                                    + preview(e.responseBody),
+                            e);
                 }
 
                 throw new IllegalStateException(
-                    "Gemini error HTTP " + e.statusCode + ". Detalle: " + preview(e.responseBody),
-                    e
-                );
+                        "Gemini error HTTP " + e.statusCode + ". Detalle: " + preview(e.responseBody),
+                        e);
             }
         }
 
@@ -247,73 +217,143 @@ public class GeminiWorkflowAiService {
 
     private String callGemini(Map<String, Object> payload) {
         return webClient.post()
-            .uri("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
-            .header("x-goog-api-key", apiKey)
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(payload)
-            .exchangeToMono(response ->
-                response.bodyToMono(String.class)
-                    .defaultIfEmpty("")
-                    .flatMap(body -> {
-                        if (response.statusCode().is2xxSuccessful()) {
-                            return Mono.just(body);
-                        }
-                        return Mono.error(new GeminiApiException(response.statusCode().value(), body));
-                    })
-            )
-            .timeout(Duration.ofSeconds(40))
-            .block();
+                .uri("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
+                .header("x-goog-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(payload)
+                .exchangeToMono(response -> response.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .flatMap(body -> {
+                            if (response.statusCode().is2xxSuccessful()) {
+                                return Mono.just(body);
+                            }
+                            return Mono.error(new GeminiApiException(response.statusCode().value(), body));
+                        }))
+                .timeout(Duration.ofSeconds(40))
+                .block();
     }
 
     private String buildSystemInstruction() {
         return """
-            Convierte instrucciones en español a un JSON de workflow visual.
+                Eres un diseñador experto de workflows BPMN/UML para un sistema de trámites.
+                Convierte instrucciones en español a un JSON de workflow visual.
 
-            Responde SOLO JSON válido.
-            No uses markdown.
-            No uses ```json.
-            No agregues explicaciones fuera del JSON.
+                RESPUESTA:
+                - Responde SOLO JSON válido.
+                - No uses markdown.
+                - No uses ```json.
+                - No agregues explicaciones fuera del JSON.
+                - El JSON debe tener exactamente:
+                  {
+                    "mode": "replace" | "patch",
+                    "summary": "frase corta",
+                    "nodes": [],
+                    "edges": []
+                  }
 
-            El JSON debe respetar exactamente el schema enviado.
-            Reglas:
-            - Usa mode="replace" si el usuario quiere crear desde cero o reemplazar todo.
-            - Usa mode="patch" si el usuario quiere modificar el flujo actual.
-            - Si hay más de un nodo, crea edges coherentes.
-            - No dejes nodos sueltos.
-            - Para flujo lineal simple, conecta nodos consecutivos.
-            - Si hay decisión, conecta la decisión hacia cada rama.
-            - Usa ids cortos y estables.
-            - summary debe ser una frase corta.
-            """;
+                MODOS:
+                - Usa mode="replace" si el usuario pide crear un flujo desde cero, nuevo workflow, reemplazar todo o rehacer el flujo.
+                - Usa mode="patch" si el usuario pide agregar, eliminar, renombrar, conectar, modificar o ajustar algo del flujo actual.
+
+                TIPOS DE NODOS PERMITIDOS:
+                - start: inicio del proceso.
+                - task: actividad operativa asignable a departamento.
+                - decision: decisión manual con exactamente dos salidas.
+                - fork: apertura de paralelo.
+                - join: cierre de paralelo.
+                - end: fin del proceso.
+
+                SHAPES PERMITIDOS:
+                - start => workflow-start
+                - task => workflow-task
+                - decision => workflow-decision
+                - fork => workflow-fork
+                - join => workflow-join
+                - end => workflow-end
+
+                REGLAS GENERALES:
+                - Todo workflow reemplazado debe tener exactamente 1 start y exactamente 1 end.
+                - Nunca generes más de un nodo end.
+                - Si hay varias rutas finales, todas deben converger al mismo único nodo end.
+                - No dejes nodos sueltos.
+                - Todo nodo, excepto start, debe tener entrada.
+                - Todo nodo, excepto end, debe tener salida.
+                - Usa ids cortos, estables y descriptivos.
+                - Los ids no deben tener espacios ni tildes.
+                - Usa nombres claros de actividades, no nombres genéricos si el usuario dio contexto.
+                - Si hay departamentos disponibles, asigna departmentId y departmentName a los nodos task y decision cuando tenga sentido.
+                - No asignes departamento a start, end, fork o join.
+
+                REGLAS PARA DECISIONES:
+                - Un nodo decision debe tener exactamente 2 salidas.
+                - Las únicas condiciones permitidas son SI y NO.
+                - Cada edge que sale de una decisión debe tener:
+                  "conditionValue": "SI" o "NO"
+                  "data": { "conditionValue": "SI" o "NO" }
+                  "labels": con texto "Sí" o "No".
+                - El data del nodo decision debe incluir:
+                  "decisionMode": "MANUAL",
+                  "decisionQuestion": "pregunta clara",
+                  "decisionOptions": [
+                    { "value": "SI", "label": "Sí" },
+                    { "value": "NO", "label": "No" }
+                  ]
+                - No generes decisiones con 3 o más ramas.
+                - No uses valores como APROBADO, RECHAZADO, OK, ERROR en conditionValue. Siempre usa SI o NO.
+
+                REGLAS PARA PARALELO:
+                - Si usas fork, debe tener al menos 2 salidas.
+                - Todo fork debe tener un join correspondiente.
+                - Todas las ramas que salen del fork deben llegar al mismo join.
+                - El join debe continuar a otro nodo o al end.
+                - No dejes ramas paralelas sin cerrar.
+
+                REGLAS PARA PATCH:
+                - Si agregas un nodo, también agrega sus edges necesarios.
+                - Si eliminas un nodo, devuelve ese nodo con:
+                  data: { "action": "delete" }
+                - Si eliminas un edge, devuelve ese edge con:
+                  data: { "action": "delete" }
+                - Si renombras un nodo, devuelve el mismo id con el nuevo label y data.label.
+                - Si conectas nodos existentes, devuelve solo el edge nuevo.
+                - No inventes ids de nodos existentes: usa los ids del currentWorkflow.
+                - En patch, conserva la coherencia del flujo actual.
+
+                COHERENCIA:
+                - Para flujo lineal: start -> task(s) -> end.
+                - Para flujo condicional: start -> task opcional -> decision -> ruta SI / ruta NO -> end o siguiente actividad común.
+                - Para flujo paralelo: start -> fork -> ramas paralelas -> join -> end o siguiente actividad.
+                - Si el usuario pide algo ambiguo, genera la estructura más simple y válida.
+                - summary debe ser una frase corta indicando qué hiciste.
+                - En flujos condicionales, las ramas SI y NO pueden terminar en actividades diferentes, pero deben llegar al mismo único end.
+                - En flujos paralelos, el join debe continuar hacia el mismo único end o hacia una actividad común que llegue al único end.
+                """;
     }
 
     private String buildUserPrompt(
-        String projectId,
-        String workflowId,
-        WorkflowAiCommandRequest request
-    ) throws Exception {
+            String projectId,
+            String workflowId,
+            WorkflowAiCommandRequest request) throws Exception {
         String workflowJson = objectMapper.writeValueAsString(request.workflow());
         String departmentsJson = objectMapper.writeValueAsString(
-            request.departments() != null ? request.departments() : List.of()
-        );
+                request.departments() != null ? request.departments() : List.of());
 
         String resolvedMode = resolveMode(request);
 
         return """
-            projectId=%s
-            workflowId=%s
-            resolvedMode=%s
-            currentWorkflow=%s
-            departments=%s
-            command=%s
-            """.formatted(
-            projectId,
-            workflowId,
-            resolvedMode,
-            workflowJson,
-            departmentsJson,
-            request.prompt()
-        );
+                projectId=%s
+                workflowId=%s
+                resolvedMode=%s
+                currentWorkflow=%s
+                departments=%s
+                command=%s
+                """.formatted(
+                projectId,
+                workflowId,
+                resolvedMode,
+                workflowJson,
+                departmentsJson,
+                request.prompt());
     }
 
     private String extractJsonText(String rawResponse) throws Exception {
@@ -371,9 +411,8 @@ public class GeminiWorkflowAiService {
 
         } catch (Exception e) {
             throw new IllegalStateException(
-                "Gemini devolvió JSON inválido o incompleto. Respuesta: " + preview(cleaned),
-                e
-            );
+                    "Gemini devolvió JSON inválido o incompleto. Respuesta: " + preview(cleaned),
+                    e);
         }
     }
 
@@ -401,35 +440,32 @@ public class GeminiWorkflowAiService {
     }
 
     private WorkflowAiGraphResponse normalizeGraphResponse(
-        WorkflowAiCommandRequest request,
-        WorkflowAiGraphResponse response
-    ) {
+            WorkflowAiCommandRequest request,
+            WorkflowAiGraphResponse response) {
         String resolvedMode = resolveMode(request);
 
         if (response == null) {
             return new WorkflowAiGraphResponse(
-                resolvedMode,
-                "No se generó respuesta",
-                List.of(),
-                List.of()
-            );
+                    resolvedMode,
+                    "No se generó respuesta",
+                    List.of(),
+                    List.of());
         }
 
         String summary = nonBlank(response.summary())
-            ? response.summary()
-            : ("replace".equals(resolvedMode)
-                ? "Workflow generado con IA"
-                : "Cambios generados con IA");
+                ? response.summary()
+                : ("replace".equals(resolvedMode)
+                        ? "Workflow generado con IA"
+                        : "Cambios generados con IA");
 
         List<WorkflowAiNode> nodes = response.nodes() == null ? List.of() : response.nodes();
         List<WorkflowAiEdge> edges = response.edges() == null ? List.of() : response.edges();
 
         return new WorkflowAiGraphResponse(
-            resolvedMode,
-            summary,
-            nodes,
-            edges
-        );
+                resolvedMode,
+                summary,
+                nodes,
+                edges);
     }
 
     private String resolveMode(WorkflowAiCommandRequest request) {
@@ -446,28 +482,26 @@ public class GeminiWorkflowAiService {
 
         String p = prompt.trim().toLowerCase();
 
-        boolean replaceIntent =
-            p.contains("crea un workflow") ||
-            p.contains("crear un workflow") ||
-            p.contains("crea un flujo") ||
-            p.contains("crear un flujo") ||
-            p.contains("nuevo workflow") ||
-            p.contains("nuevo flujo") ||
-            p.contains("desde cero") ||
-            p.contains("reemplaza todo");
+        boolean replaceIntent = p.contains("crea un workflow") ||
+                p.contains("crear un workflow") ||
+                p.contains("crea un flujo") ||
+                p.contains("crear un flujo") ||
+                p.contains("nuevo workflow") ||
+                p.contains("nuevo flujo") ||
+                p.contains("desde cero") ||
+                p.contains("reemplaza todo");
 
-        boolean patchIntent =
-            p.contains("agrega") ||
-            p.contains("añade") ||
-            p.contains("aumenta") ||
-            p.contains("conecta") ||
-            p.contains("renombra") ||
-            p.contains("cambia") ||
-            p.contains("edita") ||
-            p.contains("modifica") ||
-            p.contains("elimina") ||
-            p.contains("borra") ||
-            p.contains("quita");
+        boolean patchIntent = p.contains("agrega") ||
+                p.contains("añade") ||
+                p.contains("aumenta") ||
+                p.contains("conecta") ||
+                p.contains("renombra") ||
+                p.contains("cambia") ||
+                p.contains("edita") ||
+                p.contains("modifica") ||
+                p.contains("elimina") ||
+                p.contains("borra") ||
+                p.contains("quita");
 
         if (replaceIntent && !patchIntent) {
             return "replace";
@@ -496,8 +530,8 @@ public class GeminiWorkflowAiService {
 
         String normalized = text.replace("\n", " ").replace("\r", " ").trim();
         return normalized.length() > 400
-            ? normalized.substring(0, 400) + "..."
-            : normalized;
+                ? normalized.substring(0, 400) + "..."
+                : normalized;
     }
 
     private static class GeminiApiException extends RuntimeException {
