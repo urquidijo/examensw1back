@@ -29,4 +29,8 @@ public interface WorkflowTaskRepository extends MongoRepository<WorkflowTask, St
                         List<TaskStatus> statuses);
 
         Optional<WorkflowTask> findByIdAndProjectId(String id, String projectId);
+
+        List<WorkflowTask> findByProjectIdAndStatusInOrderByCreatedAtDesc(
+                        String projectId,
+                        List<TaskStatus> statuses);
 }

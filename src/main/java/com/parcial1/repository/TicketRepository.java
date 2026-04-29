@@ -16,4 +16,6 @@ public interface TicketRepository extends MongoRepository<Ticket, String> {
     long countByWorkflowId(String workflowId);
 
     long countByWorkflowIdAndStatusIn(String workflowId, List<TicketStatus> statuses);
+
+    List<Ticket> findByProjectIdAndStatusIn(String projectId, List<TicketStatus> statuses);
 }

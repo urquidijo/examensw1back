@@ -32,6 +32,7 @@ public class TicketResponse {
 
     private String currentDepartmentId;
     private String currentDepartmentName;
+    private LocalDateTime currentDepartmentEnteredAt;
     private String currentNodeId;
 
     private String createdBy;
